@@ -20,6 +20,9 @@
         <command>OCA\FolderProtection\Command\Unprotect</command>
         <command>OCA\FolderProtection\Command\CheckProtection</command>
     </commands>
+<settings>
+        <admin>OCA\FolderProtection\Settings\AdminSettings</admin>
+    </settings>
 
 
 </info>

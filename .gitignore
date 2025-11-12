@@ -1,24 +1,25 @@
-# Node modules
+# Node
 node_modules/
 npm-debug.log
 yarn-error.log
 
-# Build artifacts
-js/admin.js
-js/admin.js.map
+# Build
+js/*.map
+
+# Backups
+*.bak
+*.backup
+*~
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.bak
-*.backup
+# Logs
+*.log

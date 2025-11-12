@@ -83,7 +83,16 @@ class Application extends App implements IBootstrap {
         });
 
         // Register storage wrapper via hook
+
         Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addStorageWrapper');
+
+// Register admin settings
+$context->registerService(\OCA\FolderProtection\Settings\AdminSettings::class, function($c) {
+    return new \OCA\FolderProtection\Settings\AdminSettings();
+});
+
+
+
     }
 
     public function boot(IBootContext $context): void {
