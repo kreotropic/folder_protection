@@ -6,5 +6,7 @@ return [
         ['name' => 'admin#unprotect', 'url' => '/api/unprotect', 'verb' => 'POST'],
         ['name' => 'admin#check', 'url' => '/api/check', 'verb' => 'GET'],
         ['name' => 'admin#clearCache', 'url' => '/api/cache/clear', 'verb' => 'POST'],
+        ['name' => 'admin#getFolderStatuses', 'url' => '/api/status', 'verb' => 'GET'],  
+
     ]
 ];

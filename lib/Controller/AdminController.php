@@ -211,4 +211,45 @@ class AdminController extends Controller {
         $cache = $this->cacheFactory->createDistributed('folder_protection');
         $cache->clear();
     }
+
+
+        /**
+     * Get protection status for folders (for web UI)
+     * @NoCSRFRequired
+     * @NoAdminRequired
+     */
+    public function getFolderStatuses(): JSONResponse {
+        try {
+            // Get all protected paths
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('path', 'reason', 'created_by')
+                ->from('folder_protection');
+            
+            $result = $qb->executeQuery();
+            $protections = [];
+            
+            while ($row = $result->fetch()) {
+                $protections[$row['path']] = [
+                    'protected' => true,
+                    'reason' => $row['reason'],
+                    'created_by' => $row['created_by']
+                ];
+            }
+            $result->closeCursor();
+            
+            return new JSONResponse([
+                'success' => true,
+                'protections' => $protections
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Error getting folder statuses', [
+                'exception' => $e->getMessage()
+            ]);
+            
+            return new JSONResponse([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

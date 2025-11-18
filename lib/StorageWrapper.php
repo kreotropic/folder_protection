@@ -18,6 +18,8 @@ class StorageWrapper extends Wrapper {
         $this->protectionChecker = $parameters['protectionChecker'];
     }
 
+
+    
     /**
      * Log all method calls for debugging
      */
@@ -61,18 +63,42 @@ class StorageWrapper extends Wrapper {
     /**
      * Block copy operations on protected folders
      */
-    public function copy($source, $target): bool {
-        error_log("FolderProtection: copy called - source: $source, target: $target");
-
-        if ($this->protectionChecker->isProtected($source)) {
-            error_log("FolderProtection: BLOCKING copy of $source");
-            throw new ForbiddenException(
-                'This folder is protected and cannot be copied.',
-                false
-            );
-        }
-        return $this->storage->copy($source, $target);
+public function copy($source, $target): bool {
+    error_log("FolderProtection StorageWrapper: copy() called");
+    error_log("  Source: $source");
+    error_log("  Target: $target");
+    
+    // Verificar se SOURCE está protegida
+    if ($this->protectionChecker->isProtected($source)) {
+        error_log("FolderProtection: BLOCKING copy - SOURCE is protected: $source");
+        throw new ForbiddenException(
+            'This folder is protected and cannot be copied.',
+            false
+        );
     }
+    
+    // Verificar se TARGET está dentro de pasta protegida
+    if ($this->protectionChecker->isProtectedOrParentProtected($target)) {
+        error_log("FolderProtection: BLOCKING copy - TARGET is protected: $target");
+        throw new ForbiddenException(
+            'Cannot copy into protected folders.',
+            false
+        );
+    }
+    
+    // Verificar se TARGET tem nome de pasta protegida
+    $targetBasename = basename($target);
+    if ($this->protectionChecker->isAnyProtectedWithBasename($targetBasename)) {
+        error_log("FolderProtection: BLOCKING copy - TARGET basename matches protected: $targetBasename");
+        throw new ForbiddenException(
+            'Cannot create folders with protected names.',
+            false
+        );
+    }
+    
+    error_log("FolderProtection: Copy ALLOWED - proceeding with operation");
+    return $this->storage->copy($source, $target);
+}
 
     /**
      * Block rename/move operations on protected folders
@@ -100,22 +126,65 @@ public function unlink(string $path): bool {
     return $this->storage->unlink($path);
 }
 
-    /**
-     * Block cross-storage copy (important for GroupFolders)
-     */
-    public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
-        error_log("FolderProtection: copyFromStorage called - source: $sourceInternalPath, target: $targetInternalPath");
-
-        if ($this->protectionChecker->isProtected($sourceInternalPath)) {
-            error_log("FolderProtection: BLOCKING copyFromStorage of $sourceInternalPath");
+/**
+ * Block cross-storage copy (important for GroupFolders)
+ */
+public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
+    error_log("FolderProtection: copyFromStorage called");
+    error_log("  Source storage class: " . get_class($sourceStorage));
+    error_log("  Source path: '$sourceInternalPath'");
+    error_log("  Target path: '$targetInternalPath'");
+    
+    // Quando copia Group Folder, o sourceInternalPath pode estar vazio
+    // Mas o sourceStorage É o storage da GroupFolder
+    // Precisamos verificar se o sourceStorage é de uma pasta protegida
+    
+    // Verificar se SOURCE path está protegido
+    if (!empty($sourceInternalPath) && $this->protectionChecker->isProtected($sourceInternalPath)) {
+        error_log("FolderProtection: BLOCKING - source path protected: $sourceInternalPath");
+        throw new ForbiddenException(
+            'This folder is protected and cannot be copied.',
+            false
+        );
+    }
+    
+    // NOVO: Verificar se o SOURCE STORAGE é de uma GroupFolder protegida
+    if (method_exists($sourceStorage, 'getFolderId')) {
+        $folderId = $sourceStorage->getFolderId();
+        $groupFolderPath = "/__groupfolders/$folderId";
+        error_log("  Detected GroupFolder ID: $folderId, checking path: $groupFolderPath");
+        
+        if ($this->protectionChecker->isProtected($groupFolderPath)) {
+            error_log("FolderProtection: BLOCKING - GroupFolder $folderId is protected!");
             throw new ForbiddenException(
-                'This folder is protected and cannot be copied.',
+                'This group folder is protected and cannot be copied.',
                 false
             );
         }
-        return parent::copyFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
     }
-
+    
+    // Verificar TARGET
+    if ($this->protectionChecker->isProtectedOrParentProtected($targetInternalPath)) {
+        error_log("FolderProtection: BLOCKING - target protected: $targetInternalPath");
+        throw new ForbiddenException(
+            'Cannot copy into protected folders.',
+            false
+        );
+    }
+    
+    // Verificar basename
+    $targetBasename = basename($targetInternalPath);
+    if ($this->protectionChecker->isAnyProtectedWithBasename($targetBasename)) {
+        error_log("FolderProtection: BLOCKING - basename protected: $targetBasename");
+        throw new ForbiddenException(
+            'Cannot create folders with protected names.',
+            false
+        );
+    }
+    
+    error_log("FolderProtection: copyFromStorage ALLOWED");
+    return parent::copyFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
+}
     /**
      * Block cross-storage move (important for GroupFolders)
      */

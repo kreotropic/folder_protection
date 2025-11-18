@@ -181,4 +181,40 @@ class ProtectionChecker {
         return '/' . $trimmed;
     }
 
+
+    /**
+ * Get detailed protection info for a path
+ * @param string $path
+ * @return array|null ['id', 'path', 'reason', 'created_by', 'created_at'] ou null
+ */
+public function getProtectionInfo(string $path): ?array {
+    $path = $this->normalizePath($path);
+    
+    // Check cache first
+    $cacheKey = 'folder_protection_info_' . md5($path);
+    if ($this->cache !== null) {
+        $cached = $this->cache->get($cacheKey);
+        if ($cached !== null) {
+            return $cached ?: null;
+        }
+    }
+    
+    // Query database
+    $qb = $this->db->getQueryBuilder();
+    $qb->select('*')
+        ->from('folder_protection')
+        ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
+    
+    $result = $qb->executeQuery();
+    $row = $result->fetch();
+    $result->closeCursor();
+    
+    // Cache result
+    if ($this->cache !== null) {
+        $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
+    }
+    
+    return $row ?: null;
+}
+
 }

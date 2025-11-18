@@ -20,9 +20,30 @@
         <command>OCA\FolderProtection\Command\Unprotect</command>
         <command>OCA\FolderProtection\Command\CheckProtection</command>
     </commands>
-<settings>
+    
+    <settings>
         <admin>OCA\FolderProtection\Settings\AdminSettings</admin>
     </settings>
+
+    <dav>
+        <properties>
+            <property namespace="http://nextcloud.org/ns" name="is-protected">
+                <description>Indicates if the folder is protected from modifications</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="protection-reason">
+                <description>Reason why the folder is protected</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="is-deletable">
+                <description>Indicates if the folder can be deleted</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="is-renameable">
+                <description>Indicates if the folder can be renamed</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="is-moveable">
+                <description>Indicates if the folder can be moved</description>
+            </property>
+        </properties>
+    </dav>
 
 
 </info>
