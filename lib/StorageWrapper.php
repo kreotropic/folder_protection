@@ -1,4 +1,25 @@
 <?php
+
+/**
+ * StorageWrapper.php
+ *
+ * ficheiro contém a classe StorageWrapper que encapsula (wrap)
+ * um storage do Nextcloud para interceptar e bloquear operações
+ * que afetem pastas/proteções definidas pela aplicação "FolderProtection".
+ *
+ * Objetivo (explicação simples): quando uma pasta estiver marcada como
+ * "protegida", certas ações do utilizador — como apagar, mover,
+ * renomear, copiar para dentro — devem ser impedidas. Este wrapper
+ * valida essas operações antes de as encaminhar ao storage real.
+ *
+ * Comentários orientados a um leigo:
+ * - "storage": o local (físico ou virtual) onde ficam os ficheiros.
+ * - "wrapper": um pedaço de código que fica entre a aplicação e o storage
+ *   para inspecionar ou alterar pedidos (como um porteiro que verifica
+ *   permissões antes de deixar alguém passar).
+ */
+
+
 namespace OCA\FolderProtection;
 
 use OCP\Files\NotPermittedException;
@@ -126,6 +147,8 @@ class StorageWrapper extends Wrapper {
      * Explicação leiga: mover/renomear uma pasta protegida poderia removê-la da
      * área protegida ou permitir operações indesejadas; portanto bloqueamos.
      */
+
+    
     public function rename(string $source, string $target): bool {
         error_log("FolderProtection: rename called - source: $source, target: $target");
         if ($this->protectionChecker->isProtected($source)) {
