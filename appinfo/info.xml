@@ -50,13 +50,7 @@
         <filesystem/>
     </types>
 
-    <scripts>
-        <script>files-integration.js</script>
-    </scripts>
 
-    <styles>
-        <style>files-integration.css</style>
-    </styles>
 
 
 </info>
