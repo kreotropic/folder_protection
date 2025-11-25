@@ -91,6 +91,9 @@ $context->registerService(\OCA\FolderProtection\Settings\AdminSettings::class, f
     return new \OCA\FolderProtection\Settings\AdminSettings();
 });
 
+$eventDispatcher->addListener('OCA\Files\Event\LoadAdditionalScriptsEvent', function() {
+    Util::addScript('folder_protection', 'folder-protection-ui');
+});
 
 
     }
