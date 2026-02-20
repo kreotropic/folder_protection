@@ -14,11 +14,16 @@
     <dependencies>
         <nextcloud min-version="28" max-version="32"/>
     </dependencies>
+    <website>https://github.com/kreotropic/folder_protect</website>
+    <bugs>https://github.com/kreotropic/folder_protect/issues</bugs>
+    <repository>https://github.com/kreotropic/folder_protect</repository>
+
     <commands>
         <command>OCA\FolderProtection\Command\ListProtected</command>
         <command>OCA\FolderProtection\Command\Protect</command>
         <command>OCA\FolderProtection\Command\Unprotect</command>
         <command>OCA\FolderProtection\Command\CheckProtection</command>
+        <command>OCA\FolderProtection\Command\ClearNotifications</command>
     </commands>
     
     <settings>
