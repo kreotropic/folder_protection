@@ -70,6 +70,13 @@ AGPL-3.0
 
 Pull requests welcome! Please open an issue first to discuss significant changes.
 
+## Screenshots
+
+![Admin Interface](screenshots/admin-interface.png)
+
+*Add your own screenshots in the `screenshots/` directory (PNG format).
+These will be shown on the Nextcloud App Store page when you publish the app.*
+
 ## Support
 
 - Issues: [GitHub Issues](https://github.com/kreotropic/folder_protect/issues)
