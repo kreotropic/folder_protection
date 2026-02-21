@@ -72,10 +72,15 @@ Pull requests welcome! Please open an issue first to discuss significant changes
 
 ## Screenshots
 
-![Admin Interface](screenshots/admin-interface.png)
+![Admin Interface](screenshots/Admin_Interface.png)
 
-*Add your own screenshots in the `screenshots/` directory (PNG format).
-These will be shown on the Nextcloud App Store page when you publish the app.*
+![Add Protection Dialog](screenshots/Add_Protection_Interface.png)
+
+![Single Protected Folder](screenshots/Protected_Folder.png)
+
+*The three snapshots above demonstrate the admin panel listing, the
+"add protection" form and an individual protected path. These images are
+picked up by the App Store crawler to showcase the app.*
 
 ## Support
 
