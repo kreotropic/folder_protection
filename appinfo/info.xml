@@ -15,9 +15,9 @@
         <php min-version="8.1"/>
         <nextcloud min-version="28" max-version="32"/>
     </dependencies>
-    <website>https://github.com/kreotropic/folder_protect</website>
-    <bugs>https://github.com/kreotropic/folder_protect/issues</bugs>
-    <repository>https://github.com/kreotropic/folder_protect</repository>
+    <website>https://github.com/kreotropic/folder_protection</website>
+    <bugs>https://github.com/kreotropic/folder_protection/issues</bugs>
+    <repository>https://github.com/kreotropic/folder_protection</repository>
 
     <commands>
         <command>OCA\FolderProtection\Command\ListProtected</command>

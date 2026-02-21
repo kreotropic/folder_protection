@@ -30,4 +30,7 @@ DEV_CHANGELOG.md
 manual_curl_test.sh
 test_etag.sh
 
+# build/signing output
+appinfo/signature.json
+
 /vendor/
