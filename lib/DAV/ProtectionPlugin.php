@@ -175,11 +175,27 @@ class ProtectionPlugin extends ServerPlugin {
         try {
             $node = $this->server->tree->getNodeForPath($uri);
             if ($node instanceof Node) {
-                $internalPath = $node->getPath();
-                if (strpos($internalPath, '/__groupfolders/') !== 0) { 
-                    return 'files' . $internalPath; 
+                // Check if this node is backed by a group folder storage.
+                // Group folders appear in the user's DAV namespace (e.g. /files/ncadmin/Projetos)
+                // but are protected via /__groupfolders/N paths.
+                if (method_exists($node, 'getFileInfo')) {
+                    $fileInfo = $node->getFileInfo();
+                    $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+                    if ($folderId !== null) {
+                        $subPath = $fileInfo->getInternalPath(); // path within the group folder
+                        $groupPath = '__groupfolders/' . $folderId;
+                        if (!empty($subPath) && $subPath !== '.') {
+                            $groupPath .= '/' . ltrim($subPath, '/');
+                        }
+                        return $groupPath;
+                    }
                 }
-                return ltrim($internalPath, '/'); 
+
+                $internalPath = $node->getPath();
+                if (strpos($internalPath, '/__groupfolders/') !== 0) {
+                    return 'files' . $internalPath;
+                }
+                return ltrim($internalPath, '/');
             }
         } catch (\Exception $e) {
             $this->logger->debug("FolderProtection DAV: getNodeForPath failed for '$uri': " . $e->getMessage());
@@ -187,10 +203,10 @@ class ProtectionPlugin extends ServerPlugin {
 
         if (preg_match('#^/remote\.php/(?:web)?dav/files/([^/]+)(/.*)?$#', $uri, $matches)) {
             $username = $matches[1];
-            $filePath = $matches[2] ?? ''; 
+            $filePath = $matches[2] ?? '';
             return 'files/' . $username . $filePath;
         }
-        
+
         if (preg_match('#^/remote\.php/(?:web)?dav/__groupfolders/(\d+)(/.*)?$#', $uri, $matches)) {
             $folderId = $matches[1];
             $filePath = $matches[2] ?? '';
@@ -202,6 +218,23 @@ class ProtectionPlugin extends ServerPlugin {
         }
 
         return $uri;
+    }
+
+    /**
+     * Traverse the storage wrapper chain to find a GroupFolder storage with getFolderId().
+     * Returns the folder ID or null if not a group folder.
+     */
+    private function getGroupFolderIdFromStorage($storage): ?int {
+        $curr = $storage;
+        $depth = 0;
+        while ($curr !== null && $depth < 10) {
+            if (method_exists($curr, 'getFolderId')) {
+                return (int)$curr->getFolderId();
+            }
+            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
+            $depth++;
+        }
+        return null;
     }
 
     private function buildPathsToCheck(string $path): array {

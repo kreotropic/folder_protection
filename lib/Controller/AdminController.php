@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace OCA\FolderProtection\Controller;
 
 use OCA\FolderProtection\ProtectionChecker;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -20,6 +21,7 @@ class AdminController extends Controller {
     private ProtectionChecker $protectionChecker;
     private LoggerInterface $logger;
     private ICacheFactory $cacheFactory;
+    private IAppManager $appManager;
 
     public function __construct(
         string $appName,
@@ -27,13 +29,15 @@ class AdminController extends Controller {
         IDBConnection $db,
         ProtectionChecker $protectionChecker,
         LoggerInterface $logger,
-        ICacheFactory $cacheFactory
+        ICacheFactory $cacheFactory,
+        IAppManager $appManager
     ) {
         parent::__construct($appName, $request);
         $this->db = $db;
         $this->protectionChecker = $protectionChecker;
         $this->logger = $logger;
         $this->cacheFactory = $cacheFactory;
+        $this->appManager = $appManager;
     }
 
     /**
@@ -203,6 +207,77 @@ class AdminController extends Controller {
         }
     }
 
+    /**
+     * List all group folders with their protection status (admin only)
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function listGroupFolders(): JSONResponse {
+        try {
+            if (!$this->appManager->isInstalled('groupfolders')) {
+                return new JSONResponse([
+                    'success' => true,
+                    'available' => false,
+                    'folders' => [],
+                ]);
+            }
+
+            // Fetch all group folders
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('folder_id', 'mount_point')->from('group_folders');
+            $result = $qb->executeQuery();
+            $groupFolders = [];
+            while ($row = $result->fetch()) {
+                $groupFolders[(int)$row['folder_id']] = $row['mount_point'];
+            }
+            $result->closeCursor();
+
+            // Fetch which group folder paths are already protected
+            $qb2 = $this->db->getQueryBuilder();
+            $qb2->select('id', 'path', 'reason', 'created_by')
+                ->from('folder_protection')
+                ->where($qb2->expr()->like('path', $qb2->createNamedParameter('/__groupfolders/%')));
+            $result2 = $qb2->executeQuery();
+            $protected = [];
+            while ($row = $result2->fetch()) {
+                if (preg_match('#^/__groupfolders/(\d+)$#', $row['path'], $m)) {
+                    $protected[(int)$m[1]] = [
+                        'protection_id' => (int)$row['id'],
+                        'reason'        => $row['reason'],
+                        'created_by'    => $row['created_by'],
+                    ];
+                }
+            }
+            $result2->closeCursor();
+
+            $folders = [];
+            foreach ($groupFolders as $id => $mountPoint) {
+                $isProtected = isset($protected[$id]);
+                $folders[] = [
+                    'id'           => $id,
+                    'mountPoint'   => $mountPoint,
+                    'path'         => '/__groupfolders/' . $id,
+                    'protected'    => $isProtected,
+                    'protectionId' => $isProtected ? $protected[$id]['protection_id'] : null,
+                    'reason'       => $isProtected ? $protected[$id]['reason'] : null,
+                    'createdBy'    => $isProtected ? $protected[$id]['created_by'] : null,
+                ];
+            }
+
+            return new JSONResponse([
+                'success'   => true,
+                'available' => true,
+                'folders'   => $folders,
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Error listing group folders', ['exception' => $e->getMessage()]);
+            return new JSONResponse([
+                'success' => false,
+                'message' => 'Error listing group folders: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     private function clearCacheInternal(): void {
         $cache = $this->cacheFactory->createDistributed('folder_protection');
         $cache->clear();
@@ -210,6 +285,9 @@ class AdminController extends Controller {
 
     /**
      * Get protection status for all folders (accessible to all users — used by UI badges)
+     *
+     * For group folder paths (/__groupfolders/N), also emits an alias at /files/<mountPoint>
+     * so that folder-protection-ui.js (which builds /files/<name> paths) can match them.
      */
     #[NoAdminRequired]
     #[NoCSRFRequired]
@@ -231,6 +309,23 @@ class AdminController extends Controller {
             }
             $result->closeCursor();
 
+            // For group folder paths, also expose their visible mount-point path
+            // so the web UI can mark them with the lock icon.
+            if ($this->appManager->isInstalled('groupfolders')) {
+                $mountPoints = $this->fetchGroupFolderMountPoints();
+                $aliases = [];
+                foreach ($protections as $path => $info) {
+                    if (preg_match('#^/__groupfolders/(\d+)(/.*)?$#', $path, $m)) {
+                        $folderId = (int)$m[1];
+                        if (isset($mountPoints[$folderId])) {
+                            $subPath = $m[2] ?? '';
+                            $aliases['/files/' . $mountPoints[$folderId] . $subPath] = $info;
+                        }
+                    }
+                }
+                $protections = array_merge($protections, $aliases);
+            }
+
             return new JSONResponse([
                 'success' => true,
                 'protections' => $protections
@@ -245,5 +340,23 @@ class AdminController extends Controller {
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Returns a map of folder_id => mount_point from the group_folders table.
+     * Only call this when the groupfolders app is confirmed to be installed.
+     *
+     * @return array<int, string>
+     */
+    private function fetchGroupFolderMountPoints(): array {
+        $qb = $this->db->getQueryBuilder();
+        $qb->select('folder_id', 'mount_point')->from('group_folders');
+        $result = $qb->executeQuery();
+        $map = [];
+        while ($row = $result->fetch()) {
+            $map[(int)$row['folder_id']] = $row['mount_point'];
+        }
+        $result->closeCursor();
+        return $map;
     }
 }
