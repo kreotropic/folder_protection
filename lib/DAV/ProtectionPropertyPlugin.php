@@ -109,25 +109,29 @@ class ProtectionPropertyPlugin extends ServerPlugin {
     }
 
     /**
-     * Extrair path interno do node
+     * Extrair path interno do node, com suporte a group folders.
      */
     private function getNodePath(INode $node): string {
         try {
             if (method_exists($node, 'getFileInfo')) {
                 $fileInfo = $node->getFileInfo();
-                $path = $fileInfo->getInternalPath();
-                
-                // Normalizar path: deve começar com /files/
-                if (strpos($path, '__groupfolders/') === 0) {
-                    // Group folder: /__groupfolders/ID ou /files/nome
-                    // Vamos usar o path como está
-                    return '/' . $path;
+
+                // Detect group folder: traverse storage wrapper chain
+                $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+                if ($folderId !== null) {
+                    $subPath = $fileInfo->getInternalPath();
+                    $groupPath = '/__groupfolders/' . $folderId;
+                    if (!empty($subPath) && $subPath !== '.') {
+                        $groupPath .= '/' . ltrim($subPath, '/');
+                    }
+                    return $groupPath;
                 }
-                
+
+                // Regular file/folder
+                $path = $fileInfo->getInternalPath();
                 if (strpos($path, 'files/') !== 0) {
                     $path = 'files/' . ltrim($path, '/');
                 }
-                
                 return '/' . $path;
             }
         } catch (\Exception $e) {
@@ -135,8 +139,24 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                 'exception' => $e->getMessage()
             ]);
         }
-        
+
         return '';
+    }
+
+    /**
+     * Traverse the storage wrapper chain to find a GroupFolder storage with getFolderId().
+     */
+    private function getGroupFolderIdFromStorage($storage): ?int {
+        $curr = $storage;
+        $depth = 0;
+        while ($curr !== null && $depth < 10) {
+            if (method_exists($curr, 'getFolderId')) {
+                return (int)$curr->getFolderId();
+            }
+            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
+            $depth++;
+        }
+        return null;
     }
 
     /**

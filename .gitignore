@@ -24,4 +24,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Development artifacts
+gemini_worklog.md
+DEV_CHANGELOG.md
+manual_curl_test.sh
+test_etag.sh
+
 /vendor/
