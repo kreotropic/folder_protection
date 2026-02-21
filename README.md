@@ -56,6 +56,10 @@ php occ folder-protection:check "/files/ncadmin/important"
 ### Group Folders
 If the [Group Folders](https://github.com/nextcloud/groupfolders) app is installed, the admin panel shows a **Group Folders** tab where you can protect any group folder without being a member of the group.
 
+## Known Limitations
+
+- **Folder name is permanently reserved while protection is active.** Because deletion is blocked at the server level, no user can create a new folder with the same name in the same location until the protection is removed by an administrator. Plan protection accordingly — remove it first if the folder needs to be replaced or renamed.
+
 ## Requirements
 
 - Nextcloud 28 or later
