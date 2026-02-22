@@ -193,23 +193,20 @@ class ProtectionPlugin extends ServerPlugin {
             foreach ($this->buildPathsToCheck($path) as $candidate) {
                 if ($this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
                     $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $candidate");
-                    // Touch the parent directory so the desktop client re-lists it and
-                    // removes the local copy it created before the server rejected the MKCOL.
-                    // Use 403 (not 423) so the client treats it as permanent and cleans up.
-                    $parentUri = dirname($uri);
-                    if ($parentUri && $parentUri !== '.' && $parentUri !== $uri) {
-                        $this->touchProtectedNode($parentUri);
-                    }
+                    // Must throw an exception — returning false from beforeBind causes Sabre to
+                    // still send 201, which confuses the desktop client into infinite retry loops.
+                    // Sabre\DAV\Exception\Forbidden returns 403 with our message in <s:message>,
+                    // which the desktop client can display as a meaningful error.
+                    $this->touchAncestors($uri);
                     $this->setHeaders('create', 'Cannot create folders with protected names');
                     $this->sendProtectionNotification($candidate, 'create');
-                    $this->sendErrorResponse(403, '🛡️ FOLDER PROTECTED: Cannot create folders with protected names');
-                    return false;
+                    throw new \Sabre\DAV\Exception\Forbidden('This folder name is protected and cannot be created here.');
                 }
             }
         } catch (\Throwable $e) {
+            if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
-            $this->sendErrorResponse(403, 'Protection check failed');
-            return false;
+            throw new \Sabre\DAV\Exception\Forbidden('Protection check failed');
         }
     }
 
@@ -275,14 +272,13 @@ class ProtectionPlugin extends ServerPlugin {
                     // Delete the empty stepping-stone folder from the server so it does not become orphaned.
                     $this->deleteEmptyNode($sourcePath);
                     $this->setHeaders('move', 'Cannot rename to a protected folder name');
-                    $this->sendErrorResponse(403, '🛡️ FOLDER PROTECTED: Cannot rename to a protected folder name');
-                    return false;
+                    throw new \Sabre\DAV\Exception\Forbidden('This folder name is protected and cannot be used here.');
                 }
             }
         } catch (\Throwable $e) {
+            if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
-            $this->sendErrorResponse(403, 'Protection check failed');
-            return false;
+            throw new \Sabre\DAV\Exception\Forbidden('Protection check failed');
         }
     }
 
@@ -404,6 +400,23 @@ class ProtectionPlugin extends ServerPlugin {
             }
         } catch (\Throwable $e) {
             $this->logger->warning("FolderProtection DAV: Failed to touch node '$uri': " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Touch every ancestor of $uri (up to but not including the DAV root) so that
+     * ETag changes propagate all the way up the tree. The desktop client polls the
+     * user-root ETag first; without this propagation it never re-lists child folders.
+     */
+    private function touchAncestors(string $uri): void {
+        $current = dirname($uri);
+        $depth = 0;
+        while ($current && $current !== '.' && $current !== '' && $depth < 6) {
+            $this->touchProtectedNode($current);
+            $parent = dirname($current);
+            if ($parent === $current) break;
+            $current = $parent;
+            $depth++;
         }
     }
 
