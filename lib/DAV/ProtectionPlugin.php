@@ -19,6 +19,21 @@ class FolderLocked extends Exception {
     }
 }
 
+/**
+ * Exceção personalizada para retornar 403 Forbidden com mensagem customizada.
+ *
+ * Ao usar esta classe em vez de Sabre\DAV\Exception\Forbidden, o <s:exception>
+ * no XML de erro será "OCA\FolderProtection\DAV\FolderProtected" — um valor que
+ * o cliente Nextcloud desktop não reconhece — forçando-o a usar <s:message>
+ * (que contém a nossa mensagem personalizada) em vez da string hardcoded
+ * "You don't have access to this resource."
+ */
+class FolderProtected extends Exception {
+    public function getHTTPCode() {
+        return 403;
+    }
+}
+
 class ProtectionPlugin extends ServerPlugin {
 
     private $protectionChecker;
@@ -99,7 +114,7 @@ class ProtectionPlugin extends ServerPlugin {
         // Formato de erro padrão do SabreDAV/Nextcloud
         $xml = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
         $xml .= '<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">' . "\n";
-        $xml .= '  <s:exception>Sabre\DAV\Exception\Forbidden</s:exception>' . "\n";
+        $xml .= '  <s:exception>OCA\FolderProtection\DAV\FolderProtected</s:exception>' . "\n";
         $xml .= '  <s:message>' . htmlspecialchars($message, ENT_XML1, 'UTF-8') . '</s:message>' . "\n";
         $xml .= '</d:error>';
 
@@ -201,13 +216,13 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->touchAncestors($uri);
                     $this->setHeaders('create', "The folder '$folderName' is protected");
                     $this->sendProtectionNotification($candidate, 'create');
-                    throw new \Sabre\DAV\Exception\Forbidden("The folder '$folderName' is protected and cannot be created here.");
+                    throw new FolderProtected("The folder '$folderName' is protected and cannot be created here.");
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
-            throw new \Sabre\DAV\Exception\Forbidden('Protection check failed');
+            throw new FolderProtected('Protection check failed');
         }
     }
 
@@ -276,13 +291,13 @@ class ProtectionPlugin extends ServerPlugin {
                     // Delete the empty stepping-stone folder from the server so it does not become orphaned.
                     $this->deleteEmptyNode($sourcePath);
                     $this->setHeaders('move', "Cannot rename to '$destName': folder name is protected");
-                    throw new \Sabre\DAV\Exception\Forbidden("Cannot rename to '$destName': this folder name is protected.");
+                    throw new FolderProtected("Cannot rename to '$destName': this folder name is protected.");
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
-            throw new \Sabre\DAV\Exception\Forbidden('Protection check failed');
+            throw new FolderProtected('Protection check failed');
         }
     }
 
