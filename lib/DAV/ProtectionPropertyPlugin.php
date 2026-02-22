@@ -95,22 +95,19 @@ class ProtectionPropertyPlugin extends ServerPlugin {
             return $isProtected ? 'false' : 'true';
         });
 
-        // 4. Remover apenas 'D' (delete) das permissões OwnCloud para pastas protegidas.
-        // O cliente desktop lê oc:permissions antes de tentar qualquer operação:
-        //   'D' ausente → não tenta DELETE silenciosamente (evita que a pasta desapareça localmente)
-        //   'V' e 'N' MANTIDOS → o cliente ainda tenta MOVE/rename → o servidor bloqueia com 403
-        //     → o cliente mostra "The folder 'X' is protected" no painel "Not Synced" com o nome da pasta
-        // NOTA: o bypass via MKCOL "temp" + MOVE está protegido em beforeBind/beforeMove, pelo que
-        //       não é necessário remover 'N' para bloquear essa técnica.
-        // Corremos com prioridade 150 (depois do FilesPlugin a 100) para poder sobrepor o valor.
-        if ($isProtected) {
-            $currentPerms = $propFind->get(self::PROP_OC_PERMISSIONS);
-            if (is_string($currentPerms) && strpos($currentPerms, 'D') !== false) {
-                $newPerms = str_replace('D', '', $currentPerms);
-                $propFind->set(self::PROP_OC_PERMISSIONS, $newPerms);
-                $this->logger->debug("FolderProtection: Removed D from oc:permissions for '$path': '$currentPerms' → '$newPerms'");
-            }
-        }
+        // 4. NÃO manipulamos oc:permissions para pastas protegidas.
+        //
+        // Raciocínio: remover 'D' (delete) das permissões faz com que o cliente desktop SAIBA
+        // que não pode apagar/mover e reverta silenciosamente — sem fazer pedido ao servidor,
+        // sem entrada de erro no painel de actividade.
+        //
+        // Com D presente, o cliente tenta MOVE/DELETE → o servidor bloqueia com 403 e a mensagem
+        // "The folder 'X' is protected" → o cliente mostra a entrada de erro com o nome da pasta
+        // no painel "Not Synced". A pasta pode desaparecer localmente por ~30 s até o ETag forçar
+        // a restauração (aceite como trade-off para ter feedback visível ao utilizador).
+        //
+        // A protecção real (bloquear DELETE/MOVE/COPY) é garantida pelo ProtectionPlugin em
+        // beforeUnbind/beforeMove/beforeBind — não depende das oc:permissions.
     }
 
     /**
