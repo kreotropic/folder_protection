@@ -33,7 +33,18 @@
         "Protection removed successfully": "Protection removed successfully",
         "Failed to remove protection": "Failed to remove protection",
         "Action blocked: %s on \"%s\"": "Action blocked: %s on \"%s\"",
-        "The folder \"%s\" is protected. The action \"%s\" was blocked by server policy.": "The folder \"%s\" is protected. The action \"%s\" was blocked by server policy."
+        "The folder \"%s\" is protected. The action \"%s\" was blocked by server policy.": "The folder \"%s\" is protected. The action \"%s\" was blocked by server policy.",
+        "The folder '%s' is protected": "The folder '%s' is protected",
+        "The folder '%s' is protected and cannot be created here.": "The folder '%s' is protected and cannot be created here.",
+        "The folder '%s' is protected: %s": "The folder '%s' is protected: %s",
+        "Cannot rename to '%s': folder name is protected": "Cannot rename to '%s': folder name is protected",
+        "Cannot rename to '%s': this folder name is protected.": "Cannot rename to '%s': this folder name is protected.",
+        "Cannot copy protected folder: %s": "Cannot copy protected folder: %s",
+        "Cannot lock items in protected folders": "Cannot lock items in protected folders",
+        "Cannot update properties of protected folder": "Cannot update properties of protected folder",
+        "Protected by server policy": "Protected by server policy",
+        "Protection check failed": "Protection check failed",
+        "Internal server error during protection check.": "Internal server error during protection check."
     },
     "plurals": "nplurals=2; plural=(n != 1);"
 }

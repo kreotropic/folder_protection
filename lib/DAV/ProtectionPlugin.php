@@ -3,6 +3,7 @@ namespace OCA\FolderProtection\DAV;
 
 use OCA\DAV\Connector\Sabre\Node;
 use OCA\FolderProtection\ProtectionChecker;
+use OCP\IL10N;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
 use Sabre\DAV\Exception;
@@ -39,10 +40,12 @@ class ProtectionPlugin extends ServerPlugin {
     private $protectionChecker;
     private $logger;
     private $server;
+    private IL10N $l10n;
 
-    public function __construct(ProtectionChecker $protectionChecker, LoggerInterface $logger) {
+    public function __construct(ProtectionChecker $protectionChecker, LoggerInterface $logger, IL10N $l10n) {
         $this->protectionChecker = $protectionChecker;
         $this->logger = $logger;
+        $this->l10n = $l10n;
     }
 
     public function initialize(Server $server) {
@@ -214,15 +217,15 @@ class ProtectionPlugin extends ServerPlugin {
                     // Sabre\DAV\Exception\Forbidden returns 403 with our message in <s:message>,
                     // which the desktop client displays in the "Not Synced" activity panel.
                     $this->touchAncestors($uri);
-                    $this->setHeaders('create', "The folder '$folderName' is protected");
+                    $this->setHeaders('create', $this->l10n->t("The folder '%s' is protected", [$folderName]));
                     $this->sendProtectionNotification($candidate, 'create');
-                    throw new FolderProtected("The folder '$folderName' is protected and cannot be created here.");
+                    throw new FolderProtected($this->l10n->t("The folder '%s' is protected and cannot be created here.", [$folderName]));
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
-            throw new FolderProtected('Protection check failed');
+            throw new FolderProtected($this->l10n->t('Protection check failed'));
         }
     }
 
@@ -237,21 +240,22 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->touchProtectedNode($uri);
 
                     $info = $this->protectionChecker->getProtectionInfo($candidate);
-                    $reason = 'Protected by server policy';
+                    $reason = $this->l10n->t('Protected by server policy');
                     if (is_array($info) && !empty($info['reason'])) {
                         $reason = (string)$info['reason'];
                     }
 
                     $folderName = basename($uri); // usar nome visível (não o path interno que pode ser '__groupfolders/N')
-                    $this->setHeaders('delete', "The folder '$folderName' is protected: $reason");
+                    $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
+                    $this->setHeaders('delete', $msg);
                     $this->sendProtectionNotification($candidate, 'delete');
-                    $this->sendErrorResponse(403, "The folder '$folderName' is protected: $reason");
+                    $this->sendErrorResponse(403, $msg);
                     return false;
                 }
             }
         } catch (\Throwable $e) {
             $this->logger->error("FolderProtection DAV: Error in beforeUnbind: " . $e->getMessage());
-            $this->sendErrorResponse(403, 'Protection check failed');
+            $this->sendErrorResponse(403, $this->l10n->t('Protection check failed'));
             return false;
         }
     }
@@ -267,15 +271,16 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->touchProtectedNode($sourcePath);
 
                     $info = $this->protectionChecker->getProtectionInfo($candidate);
-                    $reason = 'Protected by server policy';
+                    $reason = $this->l10n->t('Protected by server policy');
                     if (is_array($info) && !empty($info['reason'])) {
                         $reason = (string)$info['reason'];
                     }
 
                     $folderName = basename($sourcePath); // usar nome visível (não o path interno que pode ser '__groupfolders/N')
-                    $this->setHeaders('move', "The folder '$folderName' is protected: $reason");
+                    $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
+                    $this->setHeaders('move', $msg);
                     $this->sendProtectionNotification($candidate, 'move');
-                    $this->sendErrorResponse(403, "The folder '$folderName' is protected: $reason");
+                    $this->sendErrorResponse(403, $msg);
                     return false;
                 }
             }
@@ -290,14 +295,14 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->logger->warning("FolderProtection DAV: Blocking rename to protected name: $destCandidate (src: $src)");
                     // Delete the empty stepping-stone folder from the server so it does not become orphaned.
                     $this->deleteEmptyNode($sourcePath);
-                    $this->setHeaders('move', "Cannot rename to '$destName': folder name is protected");
-                    throw new FolderProtected("Cannot rename to '$destName': this folder name is protected.");
+                    $this->setHeaders('move', $this->l10n->t("Cannot rename to '%s': folder name is protected", [$destName]));
+                    throw new FolderProtected($this->l10n->t("Cannot rename to '%s': this folder name is protected.", [$destName]));
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
-            throw new FolderProtected('Protection check failed');
+            throw new FolderProtected($this->l10n->t('Protection check failed'));
         }
     }
 
@@ -334,13 +339,13 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->logger->warning("FolderProtection DAV: Blocking copy - source is protected: $checkSrc");
                     $this->setHeaders('copy', $reason);
                     $this->sendProtectionNotification($checkSrc, 'copy');
-                    throw new FolderLocked('Cannot copy protected folder: ' . basename($src));
+                    throw new FolderLocked($this->l10n->t("Cannot copy protected folder: %s", [basename($src)]));
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeCopy: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
+            throw new FolderLocked($this->l10n->t('Internal server error during protection check.'));
         }
     }
 
@@ -357,13 +362,13 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->logger->warning("FolderProtection DAV: Blocking property update on protected path: $checkPath");
                     $this->setHeaders('prop_patch', $reason);
                     $this->sendProtectionNotification($checkPath, 'prop_patch');
-                    throw new FolderLocked('Cannot update properties of protected folder');
+                    throw new FolderLocked($this->l10n->t('Cannot update properties of protected folder'));
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in propPatch: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
+            throw new FolderLocked($this->l10n->t('Internal server error during protection check.'));
         }
     }
 
@@ -381,14 +386,14 @@ class ProtectionPlugin extends ServerPlugin {
                         $this->logger->warning("FolderProtection DAV: Blocking exclusive lock on protected path: $checkPath");
                         $this->setHeaders('lock', $reason);
                         $this->sendProtectionNotification($checkPath, 'lock');
-                        throw new FolderLocked('Cannot lock items in protected folders');
+                        throw new FolderLocked($this->l10n->t('Cannot lock items in protected folders'));
                     }
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeLock: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
+            throw new FolderLocked($this->l10n->t('Internal server error during protection check.'));
         }
     }
 

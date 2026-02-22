@@ -83,7 +83,8 @@ class Application extends App implements IBootstrap {
         $context->registerService(ProtectionPlugin::class, function ($c) {
             return new ProtectionPlugin(
                 $c->get(ProtectionChecker::class),
-                $c->get(LoggerInterface::class)
+                $c->get(LoggerInterface::class),
+                $c->get(\OCP\L10N\IFactory::class)->get('folder_protection')
             );
         });
 
