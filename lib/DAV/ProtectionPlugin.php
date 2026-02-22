@@ -19,16 +19,6 @@ class FolderLocked extends Exception {
     }
 }
 
-/**
- * Exceção para operações proibidas (DELETE, MOVE) que devem retornar 403.
- * Isto é mais forte que 423 e previne que clientes apaguem ficheiros localmente.
- */
-class OperationForbidden extends Exception {
-    public function getHTTPCode() {
-        return 403; // Forbidden
-    }
-}
-
 class ProtectionPlugin extends ServerPlugin {
 
     private $protectionChecker;
@@ -95,65 +85,11 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function beforeMethod($request, $response) {
-        try {
-            $raw = $request->getPath();
-            $path = $this->getInternalPath($raw);
-            $method = $request->getMethod();
-
-            $pathsToCheck = $this->buildPathsToCheck($path);
-            
-            // Intercepta DELETE e MOVE cedo para garantir que o "touch" (ETag update) persiste.
-            // Usamos 403 Forbidden com corpo XML para que o cliente entenda o erro
-            // e, ao ver o novo ETag, force o restauro (Server Wins).
-            if ($method === 'DELETE' || $method === 'MOVE') {
-                foreach ($pathsToCheck as $candidate) {
-                    if ($this->protectionChecker->isProtected($candidate)) {
-                        // 1. Força atualização do ETag para que o cliente detete mudança e restaure a pasta
-                        $this->touchProtectedNode($raw);
-
-                        // 2. Prepara headers e notificação
-                        $info = $this->protectionChecker->getProtectionInfo($candidate);
-                        $reason = 'Protected by server policy';
-                        if (is_array($info) && !empty($info['reason'])) {
-                            $reason = (string)$info['reason'];
-                        }
-                        
-                        $action = ($method === 'DELETE') ? 'delete' : 'move';
-                        $this->setHeaders($action, $reason);
-                        $this->sendProtectionNotification($candidate, $action);
-                        
-                        // 3. Retorna 403 Forbidden com XML válido (SabreDAV standard)
-                        $this->sendErrorResponse(403, "🛡️ FOLDER PROTECTED: $reason");
-                        return false;
-                    }
-                }
-            }
-
-            if ($method === 'COPY') {
-                foreach ($pathsToCheck as $candidate) {
-                    if ($this->protectionChecker->isProtected($candidate) ||
-                        $this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
-                            $info = $this->protectionChecker->getProtectionInfo($candidate);
-                            $reason = 'Protected by server policy'; // Default reason
-                            if (is_array($info) && !empty($info['reason'])) {
-                                $reason = (string)$info['reason'];
-                            }
-                            $this->logger->warning("FolderProtection DAV: Blocking COPY on protected path: $candidate");
-                            $this->setHeaders('copy', $reason);
-                            $this->sendProtectionNotification($candidate, 'copy');
-                            throw new FolderLocked('Cannot copy protected folders.');
-                    }
-                }
-            }
-
-        } catch (\Throwable $e) {
-            // Se for a nossa exceção, deixa passar
-            if ($e instanceof FolderLocked) throw $e;
-            
-            // Se for outro erro, loga e lança 423 genérico para não crashar com 500
-            $this->logger->error("FolderProtection DAV: Error in beforeMethod: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
-        }
+        // NOTE: This handler is registered too late in the Sabre event lifecycle
+        // (SabrePluginAuthInitEvent fires during emit('beforeMethod'), so our listener
+        // is added after the current emit() has already started iterating).
+        // DELETE and MOVE protection is handled in beforeUnbind/beforeMove instead.
+        // COPY protection is handled in beforeCopy.
     }
 
     private function sendErrorResponse(int $code, string $message): void {
@@ -171,7 +107,8 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     private function getInternalPath($uri) {
-        // Try to get the path from the SabreDAV tree first
+        // Try to get the node to detect group folders (which need special path translation).
+        // For regular nodes, $uri is already in the correct 'files/username/path' format.
         try {
             $node = $this->server->tree->getNodeForPath($uri);
             if ($node instanceof Node) {
@@ -191,10 +128,12 @@ class ProtectionPlugin extends ServerPlugin {
                     }
                 }
 
-                $internalPath = $node->getPath();
-                if (strpos($internalPath, '/__groupfolders/') !== 0) {
-                    return 'files' . $internalPath;
+                // Not a group folder: $uri is already 'files/username/path' — use it directly.
+                // (node->getPath() returns a path without the username, so we cannot use it.)
+                if (strpos($uri, 'files/') === 0 || strpos($uri, '__groupfolders/') === 0) {
+                    return $uri;
                 }
+                $internalPath = $node->getPath();
                 return ltrim($internalPath, '/');
             }
         } catch (\Exception $e) {
@@ -267,12 +206,60 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function beforeUnbind($uri) {
-        // DELETE verification is handled in beforeMethod to avoid ETag update rollback.
-        // StorageWrapper still protects non-DAV internal deletes.
+        try {
+            $path = $this->getInternalPath($uri);
+            $pathsToCheck = $this->buildPathsToCheck($path);
+
+            foreach ($pathsToCheck as $candidate) {
+                if ($this->protectionChecker->isProtected($candidate)) {
+                    // Update ETag so the sync client detects the change and restores the folder
+                    $this->touchProtectedNode($uri);
+
+                    $info = $this->protectionChecker->getProtectionInfo($candidate);
+                    $reason = 'Protected by server policy';
+                    if (is_array($info) && !empty($info['reason'])) {
+                        $reason = (string)$info['reason'];
+                    }
+
+                    $this->setHeaders('delete', $reason);
+                    $this->sendProtectionNotification($candidate, 'delete');
+                    $this->sendErrorResponse(403, "🛡️ FOLDER PROTECTED: $reason");
+                    return false;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error("FolderProtection DAV: Error in beforeUnbind: " . $e->getMessage());
+            $this->sendErrorResponse(403, 'Protection check failed');
+            return false;
+        }
     }
 
     public function beforeMove($sourcePath, $destinationPath) {
-        // MOVE verification is handled in beforeMethod to avoid transaction rollback.
+        try {
+            $src = $this->getInternalPath($sourcePath);
+            $pathsToCheck = $this->buildPathsToCheck($src);
+
+            foreach ($pathsToCheck as $candidate) {
+                if ($this->protectionChecker->isProtected($candidate)) {
+                    $this->touchProtectedNode($sourcePath);
+
+                    $info = $this->protectionChecker->getProtectionInfo($candidate);
+                    $reason = 'Protected by server policy';
+                    if (is_array($info) && !empty($info['reason'])) {
+                        $reason = (string)$info['reason'];
+                    }
+
+                    $this->setHeaders('move', $reason);
+                    $this->sendProtectionNotification($candidate, 'move');
+                    $this->sendErrorResponse(403, "🛡️ FOLDER PROTECTED: $reason");
+                    return false;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
+            $this->sendErrorResponse(403, 'Protection check failed');
+            return false;
+        }
     }
 
     public function beforeCopy($sourcePath, $destinationPath) {

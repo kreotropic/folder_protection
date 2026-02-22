@@ -53,7 +53,7 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      * Handler para PROPFIND - adiciona propriedades customizadas
      */
     public function propFind(PropFind $propFind, INode $node): void {
-        $path = $this->getNodePath($node);
+        $path = $this->getNodePath($node, $propFind->getPath());
 
         // Só aplicar a ficheiros e diretórios do Nextcloud
         if (!($node instanceof \OCA\DAV\Connector\Sabre\Directory) && 
@@ -110,8 +110,12 @@ class ProtectionPropertyPlugin extends ServerPlugin {
 
     /**
      * Extrair path interno do node, com suporte a group folders.
+     *
+     * @param INode  $node  DAV node being inspected
+     * @param string $uri   Path of the node relative to the DAV tree root (e.g. 'files/ncadmin/folder').
+     *                      Provided by PropFind::getPath() — already in the correct format for regular nodes.
      */
-    private function getNodePath(INode $node): string {
+    private function getNodePath(INode $node, string $uri = ''): string {
         try {
             if (method_exists($node, 'getFileInfo')) {
                 $fileInfo = $node->getFileInfo();
@@ -127,7 +131,13 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                     return $groupPath;
                 }
 
-                // Regular file/folder
+                // Regular file/folder: $uri from PropFind is already 'files/username/path'.
+                // (getInternalPath() omits the username, so we cannot use it directly.)
+                if (!empty($uri) && (strpos($uri, 'files/') === 0 || strpos($uri, '__groupfolders/') === 0)) {
+                    return '/' . $uri;
+                }
+
+                // Fallback (should rarely be reached)
                 $path = $fileInfo->getInternalPath();
                 if (strpos($path, 'files/') !== 0) {
                     $path = 'files/' . ltrim($path, '/');

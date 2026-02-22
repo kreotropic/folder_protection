@@ -223,7 +223,7 @@
 
             this.state.observer.observe(container, {
                 childList: true,
-                subtree: false
+                subtree: true  // Necessário: as rows estão a vários níveis dentro de #app-content-vue
             });
             
             this.log('[FolderProtection] ✅ Observer active');
@@ -339,6 +339,10 @@
 
         async refresh() {
             await this.loadProtectedFolders();
+            // Remove fp-processed de todas as rows para forçar re-avaliação completa
+            document.querySelectorAll(`.${this.config.processedClass}`).forEach(el => {
+                el.classList.remove(this.config.processedClass);
+            });
             this.markProtectedFolders();
         },
 

@@ -148,6 +148,8 @@ class Application extends App implements IBootstrap {
         });
 
         // Regista o Notifier para notificações
+        // Nota: registerNotifier() não existe no NC31; usamos registerService() para DI.
+        // O sistema de notificações descobre o notifier via info.xml <notifications>.
         $context->registerService(\OCA\FolderProtection\Notification\Notifier::class, function ($c) {
             return new \OCA\FolderProtection\Notification\Notifier(
                 $c->get(\OCP\L10N\IFactory::class)
@@ -233,18 +235,4 @@ class Application extends App implements IBootstrap {
         }
     }
 
-    /**
-     * Returns the list of commands for this app.
-     *
-     * @return array
-     */
-    public function getCommands(): array {
-        return [
-            \OCA\FolderProtection\Command\ListProtected::class,
-            \OCA\FolderProtection\Command\Protect::class,
-            \OCA\FolderProtection\Command\Unprotect::class,
-            \OCA\FolderProtection\Command\CheckProtection::class,
-            \OCA\FolderProtection\Command\ClearNotifications::class,
-        ];
-    }
 }

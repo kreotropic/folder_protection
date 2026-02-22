@@ -165,18 +165,12 @@ class LockPlugin extends ServerPlugin {
     }
 
     /**
-     * Extrai e normaliza path do URI
+     * Extrai e normaliza path do URI.
+     * O $uri vem do Sabre relativo à base URI (ex: "files/ncadmin/Pasta").
+     * O normalizePath() em isProtected() trata de adicionar o "/" inicial.
      */
     private function getInternalPath(string $uri): string {
-        // Remove prefixos de encoding e normaliza
-        $path = urldecode($uri);
-        $path = dirname($path);
-        
-        if (!str_starts_with($path, '/files/')) {
-            $path = '/files' . $path;
-        }
-        
-        return $path;
+        return urldecode($uri);
     }
 
     /**

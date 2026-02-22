@@ -185,11 +185,13 @@ class ProtectionChecker {
         $path = $this->normalizePath($path);
         
         // Check cache first
+        // Guardamos false para "não encontrado" e array para "encontrado".
+        // Não podemos usar `$cached ?: null` porque false ?: null = null (cache miss falso).
         $cacheKey = 'folder_protection_info_' . md5($path);
         if ($this->cache !== null) {
-            $cached = $this->cache->get($cacheKey); // Ensure this returns array|false|null
+            $cached = $this->cache->get($cacheKey);
             if ($cached !== null) {
-                return $cached ?: null;
+                return $cached === false ? null : $cached;
             }
         }
         

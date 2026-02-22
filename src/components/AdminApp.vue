@@ -242,6 +242,7 @@ export default {
             this.showAddModal = true
             this.error = null
             this.newFolder = { path: '', reason: '' }
+            this.activeTab = 'groupfolders'  // Resetar para o tab por defeito ao reabrir
             await this.loadGroupFolders()
         },
 

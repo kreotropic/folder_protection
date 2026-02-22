@@ -13,6 +13,7 @@ use OCP\AppFramework\Http\JSONResponse;
 use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\ICacheFactory;
+use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
 class AdminController extends Controller {
@@ -22,6 +23,7 @@ class AdminController extends Controller {
     private LoggerInterface $logger;
     private ICacheFactory $cacheFactory;
     private IAppManager $appManager;
+    private IUserSession $userSession;
 
     public function __construct(
         string $appName,
@@ -30,7 +32,8 @@ class AdminController extends Controller {
         ProtectionChecker $protectionChecker,
         LoggerInterface $logger,
         ICacheFactory $cacheFactory,
-        IAppManager $appManager
+        IAppManager $appManager,
+        IUserSession $userSession
     ) {
         parent::__construct($appName, $request);
         $this->db = $db;
@@ -38,6 +41,7 @@ class AdminController extends Controller {
         $this->logger = $logger;
         $this->cacheFactory = $cacheFactory;
         $this->appManager = $appManager;
+        $this->userSession = $userSession;
     }
 
     /**
@@ -100,9 +104,12 @@ class AdminController extends Controller {
      */
     #[AdminRequired]
     #[NoCSRFRequired]
-    public function protect(string $path, ?string $reason = null, ?string $userId = null): JSONResponse {
+    public function protect(string $path, ?string $reason = null): JSONResponse {
         try {
             $path = $this->protectionChecker->normalizePath($path);
+
+            // Obtém o utilizador autenticado do lado do servidor (nunca do cliente)
+            $userId = $this->userSession->getUser()?->getUID() ?? '';
 
             if ($this->protectionChecker->isProtected($path)) {
                 return new JSONResponse([
