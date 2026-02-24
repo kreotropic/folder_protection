@@ -58,7 +58,9 @@ If the [Group Folders](https://github.com/nextcloud/groupfolders) app is install
 
 ## Known Limitations
 
-- **Folder name is permanently reserved while protection is active.** Because deletion is blocked at the server level, no user can create a new folder with the same name in the same location until the protection is removed by an administrator. Plan protection accordingly — remove it first if the folder needs to be replaced or renamed.
+- **Folder name is globally reserved while protection is active.** Because creation is blocked by folder name across the entire server, no user can create a new folder with the same name anywhere until the protection is removed by an administrator. Plan protection accordingly — remove it first if the folder needs to be replaced or renamed.
+
+- **The "Copy" button is hidden in bulk selection whenever a protected folder is included in the selection.** Even if other non-protected folders are also selected, the Copy action will be hidden for the entire selection. This is a UI-level limitation: because copying a protected folder is blocked at the server level anyway, the button is hidden to avoid confusing error messages. To copy non-protected folders, deselect any protected folders first.
 
 ## Requirements
 

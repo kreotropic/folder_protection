@@ -159,6 +159,12 @@
                 .files-list__row.${this.config.protectedClass}:not([data-animated]) .files-list__row-icon::after {
                     animation: badgeAppear 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
                 }
+
+                /* Esconde o botão de Copy inline (visível na row ao hover) */
+                .files-list__row.${this.config.protectedClass} [data-cy-files-list-row-action="copy"],
+                .files-list__row.${this.config.protectedClass} [data-action="copy"] {
+                    display: none !important;
+                }
             `;
 
             const styleEl = document.createElement('style');
@@ -183,7 +189,13 @@
 
         setupEventListeners() {
             this.log('[FolderProtection] Setting up observer');
-            
+
+            // Observa popovers de ações (menu três pontos) para esconder Copy
+            this.setupActionMenuObserver();
+
+            // Observa seleção de rows para esconder Copy na barra de seleção múltipla
+            this.setupSelectionObserver();
+
             const container = document.querySelector('#app-content-vue');
             if (!container) return;
 
@@ -229,6 +241,84 @@
             this.log('[FolderProtection] ✅ Observer active');
         },
 
+
+        setupSelectionObserver() {
+            const container = document.querySelector('#app-content-vue') || document.body;
+
+            const observer = new MutationObserver(() => {
+                this.updateSelectionBarCopyButton();
+            });
+
+            observer.observe(container, {
+                subtree: true,
+                attributeFilter: ['aria-selected', 'data-cy-files-list-row-selected', 'class'],
+                childList: true,
+            });
+        },
+
+        updateSelectionBarCopyButton() {
+            // Verifica se alguma row protegida está selecionada
+            const anyProtectedSelected = document.querySelector(
+                `.files-list__row.${this.config.protectedClass} input[type="checkbox"]:checked, ` +
+                `.files-list__row.${this.config.protectedClass}[data-cy-files-list-row-selected="true"], ` +
+                `.files-list__row.${this.config.protectedClass}.selected`
+            );
+
+            const copyBtn = document.querySelector('[data-cy-files-list-selection-action="move-copy"]');
+            if (copyBtn) {
+                copyBtn.style.display = anyProtectedSelected ? 'none' : '';
+                this.log('[FolderProtection] Selection bar Copy button:', anyProtectedSelected ? 'hidden' : 'visible');
+            }
+        },
+
+        setupActionMenuObserver() {
+            // Observa o body para detetar quando um popover de ações abre
+            const bodyObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (!(node instanceof HTMLElement)) continue;
+
+                        // Nextcloud NC28+ usa [data-cy-files-action-menu] ou role="menu"
+                        const menu = node.matches('[data-cy-files-action-menu], [role="menu"]')
+                            ? node
+                            : node.querySelector('[data-cy-files-action-menu], [role="menu"]');
+
+                        if (menu) {
+                            this.hideCopyInMenu(menu);
+                        }
+                    }
+                }
+            });
+
+            bodyObserver.observe(document.body, { childList: true, subtree: true });
+        },
+
+        hideCopyInMenu(menu) {
+            // Descobre qual row está activa (hover ou menu aberto)
+            const activeRow = document.querySelector(
+                `.files-list__row.${this.config.protectedClass}:hover, ` +
+                `.files-list__row.${this.config.protectedClass}[data-cy-files-list-row-selected="true"]`
+            );
+
+            if (!activeRow) return;
+
+            // Tenta várias estratégias para encontrar o botão de Copy no menu
+            const selectors = [
+                '[data-cy-files-list-row-action="copy"]',
+                '[data-action="copy"]',
+                'button[aria-label*="Copy"], button[aria-label*="Copiar"]',
+                'li:has(button[aria-label*="Copy"]), li:has(button[aria-label*="Copiar"])',
+            ];
+
+            for (const sel of selectors) {
+                try {
+                    menu.querySelectorAll(sel).forEach(el => {
+                        el.closest('li') ? el.closest('li').remove() : el.remove();
+                        this.log('[FolderProtection] Removed copy action from menu');
+                    });
+                } catch (_) { /* :has() pode não ser suportado */ }
+            }
+        },
 
         processRow(row) {
             const filename = row.getAttribute('data-cy-files-list-row-name');
