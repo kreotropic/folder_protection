@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1] - 2026-03-10
+
+### Fixed
+- Fixed false positive in `beforeBind()` where chunked upload paths (`/uploads/.../1`, `/2`, etc.) matched protected GroupFolder IDs, blocking file uploads larger than `upload_chunk_size` (128 MB default)
+- Affected both web browser and desktop client uploads
+
+
 ## [2.0.1] - 2026-02-22
 
 ### Fixed
