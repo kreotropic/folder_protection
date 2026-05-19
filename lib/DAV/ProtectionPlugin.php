@@ -207,7 +207,7 @@ class ProtectionPlugin extends ServerPlugin {
             $this->logger->debug("FolderProtection DAV: beforeBind checking '$path'");
 
             foreach ($this->buildPathsToCheck($path) as $candidate) {
-                if ($this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
+                if ($this->protectionChecker->isProtected($candidate)) {
                     $folderName = basename($uri);
                     $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $candidate");
                     // Must throw an exception — returning false from beforeBind causes Sabre to
@@ -293,15 +293,15 @@ class ProtectionPlugin extends ServerPlugin {
                 }
             }
 
-            // Block rename to a protected name (prevents "create temp + rename" bypass)
+            // Block rename/move to a protected path (prevents "create temp + rename" bypass)
             $dst = $this->getInternalPath($destinationPath);
             foreach ($this->buildPathsToCheck($dst) as $destCandidate) {
-                if ($this->protectionChecker->isAnyProtectedWithBasename(basename($destCandidate))) {
+                if ($this->protectionChecker->isProtected($destCandidate)) {
                     $destName = basename($destinationPath);
-                    $this->logger->warning("FolderProtection DAV: Blocking rename to protected name: $destCandidate (src: $src)");
+                    $this->logger->warning("FolderProtection DAV: Blocking rename to protected path: $destCandidate (src: $src)");
                     $this->deleteEmptyNode($sourcePath);
-                    $this->setHeaders('move', $this->l10n->t("Cannot rename to '%s': folder name is protected", [$destName]));
-                    throw new FolderProtected($this->l10n->t("Cannot rename to '%s': this folder name is protected.", [$destName]));
+                    $this->setHeaders('move', $this->l10n->t("Cannot rename to '%s': folder is protected", [$destName]));
+                    throw new FolderProtected($this->l10n->t("Cannot rename to '%s': this folder path is protected.", [$destName]));
                 }
             }
         } catch (\Throwable $e) {
