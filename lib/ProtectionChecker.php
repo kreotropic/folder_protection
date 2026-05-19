@@ -269,6 +269,25 @@ class ProtectionChecker {
     }
 
     /**
+     * Verifica se algum path protegido é descendente directo de $path.
+     * Útil para bloquear a eliminação/movimento de uma pasta pai quando
+     * uma das suas subpastas está protegida.
+     * Ex: se '/files/A/B/C' está protegido, hasProtectedDescendant('/files/A') → true
+     */
+    public function hasProtectedDescendant(string $path): bool {
+        $path = $this->normalizePath($path);
+        $prefix = rtrim($path, '/') . '/';
+
+        foreach ($this->getProtectedFolders() as $protectedPath) {
+            $normalized = $this->normalizePath($protectedPath);
+            if (str_starts_with($normalized, $prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Verifica se deve enviar notificação (Rate Limiting)
      * Evita spam de notificações para a mesma pasta/ação num curto período.
      * TTL: 30 minutos (1800 segundos)

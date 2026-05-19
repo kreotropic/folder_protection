@@ -10,6 +10,8 @@ use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\Files\IRootFolder;
+use OCP\Files\Folder;
 use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\ICacheFactory;
@@ -24,6 +26,7 @@ class AdminController extends Controller {
     private ICacheFactory $cacheFactory;
     private IAppManager $appManager;
     private IUserSession $userSession;
+    private IRootFolder $rootFolder;
 
     public function __construct(
         string $appName,
@@ -33,7 +36,8 @@ class AdminController extends Controller {
         LoggerInterface $logger,
         ICacheFactory $cacheFactory,
         IAppManager $appManager,
-        IUserSession $userSession
+        IUserSession $userSession,
+        IRootFolder $rootFolder
     ) {
         parent::__construct($appName, $request);
         $this->db = $db;
@@ -42,6 +46,7 @@ class AdminController extends Controller {
         $this->cacheFactory = $cacheFactory;
         $this->appManager = $appManager;
         $this->userSession = $userSession;
+        $this->rootFolder = $rootFolder;
     }
 
     /**
@@ -337,6 +342,50 @@ class AdminController extends Controller {
 
     private function clearCacheInternal(): void {
         $this->protectionChecker->clearCache();
+    }
+
+    /**
+     * Check if a custom path exists in the filesystem (admin only).
+     * Used by the admin UI to warn before protecting a non-existent folder.
+     * Checks against the currently logged-in admin's user folder.
+     * Group folder paths (/__groupfolders/...) are always reported as existing.
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function checkExists(string $path): JSONResponse {
+        try {
+            $path = $this->protectionChecker->normalizePath($path);
+
+            // Group folder paths are not in any user's home — always allow
+            if (str_starts_with($path, '/__groupfolders/')) {
+                return new JSONResponse(['exists' => true]);
+            }
+
+            $userId = $this->userSession->getUser()?->getUID();
+            if (!$userId) {
+                return new JSONResponse(['exists' => null]);
+            }
+
+            // Convert /files/A/B → /A/B for getUserFolder lookup
+            $relativePath = preg_replace('#^/files#', '', $path);
+
+            try {
+                $userFolder = $this->rootFolder->getUserFolder($userId);
+                if (!$userFolder->nodeExists($relativePath)) {
+                    return new JSONResponse(['exists' => false]);
+                }
+                $node = $userFolder->get($relativePath);
+                return new JSONResponse([
+                    'exists' => $node instanceof Folder,
+                    'isFile' => !($node instanceof Folder),
+                ]);
+            } catch (\OCP\Files\NotFoundException $e) {
+                return new JSONResponse(['exists' => false]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Error checking folder existence', ['exception' => $e->getMessage()]);
+            return new JSONResponse(['exists' => null]);
+        }
     }
 
     /**

@@ -1,8 +1,17 @@
 // Nota: logs do módulo são condicionados por `config.debug` (padrão: false).
 
 /**
- * Folder Protection UI Module for Nextcloud 31
+ * Folder Protection UI Module for Nextcloud 32
  * Uses CSS pseudo-elements for badges (Vue-compatible)
+ * 
+ * v2.2.0 - Fix: lock icon appearing on wrong rows after navigation
+ *   - Detect directory changes via hashchange to force full reprocess
+ *   - Always reprocess all visible rows (virtual scrolling recycles DOM elements)
+ * v2.3.0 - Performance: near-instant lock icon rendering
+ *   - Single RAF debounce (removed double RAF+setTimeout)
+ *   - processRow only touches DOM when state actually changes
+ *   - currentDir computed once per cycle, not per row
+ *   - Synchronous processing (safe: virtual scroll = ~30-100 DOM rows max)
  */
 
 (function() {
@@ -12,23 +21,20 @@
         config: {
             apiEndpoint: '/apps/folder_protection/api/status',
             protectedAttr: 'data-folder-protected',
-            // Nova opção: usar uma classe CSS para marcar linhas protegidas.
-            // Preferível por performance/selectors; mantemos `protectedAttr` apenas por compatibilidade.
             protectedClass: 'fp-protected',
-            // Classe usada para marcar rows já processadas (evita re-processamento)
-            processedClass: 'fp-processed',
             checkInterval: 100,
             maxCheckAttempts: 50,
-            debug: false // definir para true para ativar logs
+            debug: false
         },
 
         state: {
             protectedFolders: new Set(),
+            normalizedProtected: new Set(),
             initialized: false,
-            observer: null
+            observer: null,
+            currentDir: null  // Track current directory to detect navigation
         },
 
-        // Helpers de logging: usam `config.debug` para evitar spam no console
         log(...args) {
             if (this.config.debug) console.log(...args);
         },
@@ -44,8 +50,9 @@
             this.injectStyles();
             
             this.waitForFilesApp().then(() => {
+                this.state.currentDir = this.getCurrentDirectory();
                 this.setupEventListeners();
-                this.markProtectedFolders(); // Aplicação inicial
+                this.markProtectedFolders();
                 this.state.initialized = true;
                 this.log('[FolderProtection] ✅ Initialized');
             });
@@ -58,7 +65,6 @@
                 
                 if (data.success && data.protections) {
                     this.state.protectedFolders = new Set(Object.keys(data.protections));
-                    // Pré-processar versões normalizadas para lookups rápidos
                     this.preprocessProtectedFolders();
                     this.log('[FolderProtection] Loaded', this.state.protectedFolders.size, 'folders');
                 }
@@ -67,25 +73,19 @@
             }
         },
 
-        // Normaliza caminhos recebidos/consultados para uma forma canónica
         normalizePath(p) {
             if (!p) return p;
-            // colapsa múltiplas barras
             p = p.replace(/\/+/g, '/');
-            // garante leading slash
             if (!p.startsWith('/')) p = '/' + p;
-            // remove trailing slash (exceto root)
             if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
             return p;
         },
 
-        // Constrói um Set com paths normalizados para lookups rápidos
         preprocessProtectedFolders() {
             const normalized = new Set();
             for (const p of this.state.protectedFolders) {
                 if (!p) continue;
-                const np = this.normalizePath(p);
-                normalized.add(np);
+                normalized.add(this.normalizePath(p));
             }
             this.state.normalizedProtected = normalized;
         },
@@ -94,18 +94,12 @@
             if (document.getElementById('folder-protection-styles')) return;
 
             const styles = `
-                /* CSS variables para fácil ajuste e possível theming */
                 :root {
                     --protection-badge-color: rgba(0, 0, 0, 0.9);
                     --protection-badge-text-color: #fff;
                     --protection-badge-zindex: 1000;
                     --protection-badge-shadow: 0 1px 3px rgba(0,0,0,0.5);
                     --protection-badge-size: 14px;
-                }
-
-                /* Agrupar regras que usam o mesmo seletor de linha protegida (classe) */
-                .files-list__row.${this.config.protectedClass} {
-                    /* alvo: o ícone e o nome recebem estilos via pseudo-elementos abaixo */
                 }
 
                 .files-list__row.${this.config.protectedClass} .files-list__row-icon {
@@ -119,12 +113,11 @@
                     right: -9px;
                     font-size: var(--protection-badge-size);
                     line-height: 16px;
-                    z-index: calc(var(--protection-badge-zindex) - 990); /* small local stacking */
+                    z-index: calc(var(--protection-badge-zindex) - 990);
                     filter: drop-shadow(var(--protection-badge-shadow));
                     pointer-events: none;
                 }
 
-                /* Badge de texto (visível ao hover) */
                 .files-list__row.${this.config.protectedClass} .files-list__row-name::after {
                     content: 'Protected folder';
                     position: absolute;
@@ -156,11 +149,10 @@
                     to { opacity: 1; transform: scale(1); }
                 }
 
-                .files-list__row.${this.config.protectedClass}:not([data-animated]) .files-list__row-icon::after {
+                .files-list__row.${this.config.protectedClass} .files-list__row-icon::after {
                     animation: badgeAppear 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
                 }
 
-                /* Esconde o botão de Copy inline (visível na row ao hover) */
                 .files-list__row.${this.config.protectedClass} [data-cy-files-list-row-action="copy"],
                 .files-list__row.${this.config.protectedClass} [data-action="copy"] {
                     display: none !important;
@@ -178,7 +170,6 @@
                 let attempts = 0;
                 const check = setInterval(() => {
                     const app = document.querySelector('.files-list__tbody');
-                    
                     if (app || ++attempts > this.config.maxCheckAttempts) {
                         clearInterval(check);
                         resolve();
@@ -187,40 +178,68 @@
             });
         },
 
+        /**
+         * Clear all protection markers from every row.
+         * Called on directory change to ensure recycled DOM elements
+         * don't carry stale lock icons into the new listing.
+         */
+        clearAllMarkers() {
+            document.querySelectorAll(`.files-list__row.${this.config.protectedClass}`).forEach(row => {
+                row.classList.remove(this.config.protectedClass);
+            });
+            this.log('[FolderProtection] 🧹 Cleared all markers');
+        },
+
+        /**
+         * Detect directory change and force full reprocess.
+         * The Nextcloud file list reuses DOM elements (virtual scrolling),
+         * so navigating into/out of a folder recycles <tr> elements that
+         * may still carry fp-protected / fp-processed classes from the
+         * previous directory listing.
+         */
+        onDirectoryChanged() {
+            const newDir = this.getCurrentDirectory();
+            if (newDir !== this.state.currentDir) {
+                this.log('[FolderProtection] 📂 Directory changed:', this.state.currentDir, '→', newDir);
+                this.state.currentDir = newDir;
+                this.clearAllMarkers();
+                // Use RAF instead of fixed delay — processes as soon as
+                // the browser has painted the new rows (~16ms max)
+                requestAnimationFrame(() => this.markProtectedFolders());
+            }
+        },
+
         setupEventListeners() {
             this.log('[FolderProtection] Setting up observer');
 
-            // Observa popovers de ações (menu três pontos) para esconder Copy
-            this.setupActionMenuObserver();
+            // --- Directory change detection ---
+            // hashchange covers back/forward navigation and breadcrumb clicks
+            window.addEventListener('hashchange', () => this.onDirectoryChanged());
 
-            // Observa seleção de rows para esconder Copy na barra de seleção múltipla
+            // popstate covers browser back/forward buttons
+            window.addEventListener('popstate', () => {
+                // Small delay: hash may not be updated yet at popstate time
+                setTimeout(() => this.onDirectoryChanged(), 10);
+            });
+
+            this.setupActionMenuObserver();
             this.setupSelectionObserver();
 
             const container = document.querySelector('#app-content-vue');
             if (!container) return;
 
-            let debounce;
-            let rafId;
-            let pendingProcess = false; // Flag para evitar múltiplos processamentos simultâneos
+            let rafId = null;
             
-            // Debounce otimizado: agrupa mutações consecutivas
             const scheduleProcess = () => {
-                if (pendingProcess) return; // Já há um processamento agendado
+                // Single RAF — fires on next paint frame (~16ms max).
+                // No extra setTimeout needed; processRow is lightweight
+                // (just classList ops on visible rows).
+                if (rafId) return; // Already scheduled for this frame
                 
-                pendingProcess = true;
-                
-                // Cancelar timers anteriores (mais eficiente)
-                if (debounce) clearTimeout(debounce);
-                if (rafId) cancelAnimationFrame(rafId);
-                
-                // Usar apenas RAF (mais eficiente que setTimeout + RAF)
-                // RAF é sincronizado com o refresh do browser (~60fps)
                 rafId = requestAnimationFrame(() => {
-                    debounce = setTimeout(() => {
-                        this.log('[FolderProtection] ⚡ Processing rows');
-                        this.markProtectedFolders();
-                        pendingProcess = false; // Permitir próximo processamento
-                    }, 16); // 16ms ≈ 1 frame em 60fps
+                    rafId = null;
+                    this.log('[FolderProtection] ⚡ Processing rows');
+                    this.markProtectedFolders();
                 });
             };
             
@@ -235,12 +254,11 @@
 
             this.state.observer.observe(container, {
                 childList: true,
-                subtree: true  // Necessário: as rows estão a vários níveis dentro de #app-content-vue
+                subtree: true
             });
             
             this.log('[FolderProtection] ✅ Observer active');
         },
-
 
         setupSelectionObserver() {
             const container = document.querySelector('#app-content-vue') || document.body;
@@ -257,7 +275,6 @@
         },
 
         updateSelectionBarCopyButton() {
-            // Verifica se alguma row protegida está selecionada
             const anyProtectedSelected = document.querySelector(
                 `.files-list__row.${this.config.protectedClass} input[type="checkbox"]:checked, ` +
                 `.files-list__row.${this.config.protectedClass}[data-cy-files-list-row-selected="true"], ` +
@@ -272,13 +289,11 @@
         },
 
         setupActionMenuObserver() {
-            // Observa o body para detetar quando um popover de ações abre
             const bodyObserver = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
                     for (const node of mutation.addedNodes) {
                         if (!(node instanceof HTMLElement)) continue;
 
-                        // Nextcloud NC28+ usa [data-cy-files-action-menu] ou role="menu"
                         const menu = node.matches('[data-cy-files-action-menu], [role="menu"]')
                             ? node
                             : node.querySelector('[data-cy-files-action-menu], [role="menu"]');
@@ -294,7 +309,6 @@
         },
 
         hideCopyInMenu(menu) {
-            // Descobre qual row está activa (hover ou menu aberto)
             const activeRow = document.querySelector(
                 `.files-list__row.${this.config.protectedClass}:hover, ` +
                 `.files-list__row.${this.config.protectedClass}[data-cy-files-list-row-selected="true"]`
@@ -302,7 +316,6 @@
 
             if (!activeRow) return;
 
-            // Tenta várias estratégias para encontrar o botão de Copy no menu
             const selectors = [
                 '[data-cy-files-list-row-action="copy"]',
                 '[data-action="copy"]',
@@ -316,112 +329,100 @@
                         el.closest('li') ? el.closest('li').remove() : el.remove();
                         this.log('[FolderProtection] Removed copy action from menu');
                     });
-                } catch (_) { /* :has() pode não ser suportado */ }
+                } catch (_) { /* :has() may not be supported */ }
             }
         },
 
-        processRow(row) {
+        /**
+         * Process a single row: always clean and re-evaluate.
+         * This is critical because Nextcloud's virtual scrolling recycles
+         * DOM elements — a <tr> that was "Documentos" (protected) may now
+         * represent "Fotos" (not protected) with the same DOM node.
+         * 
+         * @param {HTMLElement} row - The table row element
+         * @param {string} currentDir - Pre-computed current directory (avoid repeated DOM reads)
+         */
+        processRow(row, currentDir) {
             const filename = row.getAttribute('data-cy-files-list-row-name');
             if (!filename) return;
 
-            // Limpar marcações antigas
-            row.classList.remove(this.config.protectedClass);
-            row.removeAttribute('data-animated');
-
-            // Construir path completo
-            const currentDir = this.getCurrentDirectory();
             const fullPath = this.buildFullPath(currentDir, filename);
-            
-            // Verificar se está protegido (isFolderProtected decide se aplica)
             const isProtected = this.isFolderProtected(fullPath);
+            const wasProtected = row.classList.contains(this.config.protectedClass);
 
-            if (isProtected) {
+            // Only touch DOM if state actually changed
+            if (isProtected && !wasProtected) {
                 row.classList.add(this.config.protectedClass);
-                row.setAttribute('data-animated', 'true');
-                this.log('[FolderProtection] ✅ Protected:', filename, '|', fullPath);
+            } else if (!isProtected && wasProtected) {
+                row.classList.remove(this.config.protectedClass);
             }
         },
 
+        /**
+         * Mark protected folders in the current listing.
+         * 
+         * Processes ALL visible rows synchronously. This is safe because:
+         * - Virtual scrolling means only ~30-100 rows exist in DOM at once
+         * - processRow only touches DOM when state changes (cheap no-op otherwise)
+         * - currentDir is computed once and reused across all rows
+         */
         markProtectedFolders() {
-            const rows = document.querySelectorAll(`.files-list__row:not(.${this.config.processedClass})`);
+            const allRows = document.querySelectorAll('.files-list__row');
             
-            if (rows.length === 0) {
-                this.log('[FolderProtection] No new rows to process');
+            if (allRows.length === 0) {
+                this.log('[FolderProtection] No rows to process');
                 return;
             }
 
-            this.log(`[FolderProtection] Processing ${rows.length} new rows`);
+            this.log(`[FolderProtection] Processing ${allRows.length} rows`);
             
-            // Processar apenas novas rows (com microtasks em lotes para não bloquear UI)
-            let processed = 0;
-            // Calcular batch size dinamicamente: processa tudo em listas pequenas,
-            // usa uma fracção (≈10%) em listas maiores, com limites para estabilidade.
-            const batchSize = rows.length <= 100 ? rows.length : Math.max(20, Math.min(200, Math.floor(rows.length / 10)));
-            this.log(`[FolderProtection] batchSize selected: ${batchSize}`);
+            // Compute once, reuse for all rows (avoids repeated hash parsing)
+            const currentDir = this.getCurrentDirectory();
             
-            const processBatch = () => {
-                const end = Math.min(processed + batchSize, rows.length);
-                
-                for (let i = processed; i < end; i++) {
-                    this.processRow(rows[i]);
-                    rows[i].classList.add(this.config.processedClass); // Marcar como processada
-                }
-                
-                processed = end;
-                
-                // Se houver mais rows, agendar próximo lote
-                if (processed < rows.length) {
-                    setTimeout(processBatch, 0); // Yield ao browser
-                }
-            };
-            
-            processBatch();
+            for (let i = 0; i < allRows.length; i++) {
+                this.processRow(allRows[i], currentDir);
+            }
         },
 
         getCurrentDirectory() {
-            // Nextcloud 25-31 usa hash-router: #/?dir=/pasta
+            // Nextcloud 32+: dir is in the query string (?dir=/path)
+            const searchParams = new URLSearchParams(window.location.search);
+            if (searchParams.has('dir')) {
+                return searchParams.get('dir');
+            }
+            // Older Nextcloud: dir was in the hash (#dir=/path)
             const hash = window.location.hash;
             const match = hash.match(/dir=([^&]*)/);
             return match ? decodeURIComponent(match[1]) : '/';
         },
 
-        /**
-         * Constrói o path completo com prefixo /files
-         * 
-         * Explicação:
-         * - window.location.hash traz dir sem /files (ex: /Docs)
-         * - Backend armazena com /files (ex: /files/Docs)
-         * - Precisamos normalizar para fazer match com a BD
-         */
         buildFullPath(currentDir, filename) {
-            // Remove prefixo /files se estiver presente
             currentDir = currentDir.replace(/^\/files/, '');
-            
-            // Constrói o caminho
             let fullPath = currentDir === '/' ? `/${filename}` : `${currentDir}/${filename}`;
-            
-            // Adiciona /files e normaliza slashes múltiplos
             fullPath = `/files${fullPath}`.replace(/\/+/g, '/');
-            
             return fullPath;
         },
 
         isFolderProtected(fullPath) {
-            // Usa o Set pré-processado para checks rápidos. Também valida pais.
             if (!fullPath) return false;
 
             const np = this.normalizePath(fullPath);
-            // Verifica exato
             if (this.state.normalizedProtected?.has(np)) return true;
 
-            // Verifica pais: sobe na hierarquia até root
+            // Check if any parent is protected
             let curr = np;
             while (curr && curr !== '/') {
-                // remove último segmento
                 const parent = curr.replace(/\/[^\/]*$/, '') || '/';
                 if (this.state.normalizedProtected?.has(parent)) return true;
                 if (parent === curr) break;
                 curr = parent;
+            }
+
+            // Check if any protected path is a descendant of this path
+            // (ancestor folders of a deep-protected folder also show the lock)
+            const prefix = np.endsWith('/') ? np : np + '/';
+            for (const protectedPath of this.state.normalizedProtected) {
+                if (protectedPath.startsWith(prefix)) return true;
             }
 
             return false;
@@ -429,21 +430,14 @@
 
         async refresh() {
             await this.loadProtectedFolders();
-            // Remove fp-processed de todas as rows para forçar re-avaliação completa
-            document.querySelectorAll(`.${this.config.processedClass}`).forEach(el => {
-                el.classList.remove(this.config.processedClass);
-            });
+            this.clearAllMarkers();
             this.markProtectedFolders();
         },
 
         destroy() {
             if (this.state.observer) this.state.observer.disconnect();
             document.getElementById('folder-protection-styles')?.remove();
-            
-            // Limpar atributos de tracking
-            document.querySelectorAll(`.${this.config.processedClass}`).forEach(el => {
-                el.classList.remove(this.config.processedClass);
-            });
+            this.clearAllMarkers();
         }
     };
 

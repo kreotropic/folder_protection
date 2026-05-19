@@ -231,13 +231,20 @@ class ProtectionPlugin extends ServerPlugin {
             $pathsToCheck = $this->buildPathsToCheck($path);
 
             foreach ($pathsToCheck as $candidate) {
-                if ($this->protectionChecker->isProtected($candidate)) {
+                $directlyProtected = $this->protectionChecker->isProtected($candidate);
+                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
+
+                if ($directlyProtected || $hasProtectedChild) {
                     $this->touchProtectedNode($uri);
 
-                    $info = $this->protectionChecker->getProtectionInfo($candidate);
                     $reason = $this->l10n->t('Protected by server policy');
-                    if (is_array($info) && !empty($info['reason'])) {
-                        $reason = (string)$info['reason'];
+                    if ($directlyProtected) {
+                        $info = $this->protectionChecker->getProtectionInfo($candidate);
+                        if (is_array($info) && !empty($info['reason'])) {
+                            $reason = (string)$info['reason'];
+                        }
+                    } else {
+                        $reason = $this->l10n->t('Contains protected sub-folders');
                     }
 
                     $folderName = basename($uri);
@@ -261,13 +268,20 @@ class ProtectionPlugin extends ServerPlugin {
             $pathsToCheck = $this->buildPathsToCheck($src);
 
             foreach ($pathsToCheck as $candidate) {
-                if ($this->protectionChecker->isProtected($candidate)) {
+                $directlyProtected = $this->protectionChecker->isProtected($candidate);
+                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
+
+                if ($directlyProtected || $hasProtectedChild) {
                     $this->touchProtectedNode($sourcePath);
 
-                    $info = $this->protectionChecker->getProtectionInfo($candidate);
                     $reason = $this->l10n->t('Protected by server policy');
-                    if (is_array($info) && !empty($info['reason'])) {
-                        $reason = (string)$info['reason'];
+                    if ($directlyProtected) {
+                        $info = $this->protectionChecker->getProtectionInfo($candidate);
+                        if (is_array($info) && !empty($info['reason'])) {
+                            $reason = (string)$info['reason'];
+                        }
+                    } else {
+                        $reason = $this->l10n->t('Contains protected sub-folders');
                     }
 
                     $folderName = basename($sourcePath);

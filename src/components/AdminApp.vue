@@ -156,12 +156,20 @@
                                     id="folder-path"
                                     v-model="newFolder.folderName"
                                     type="text"
-                                    :placeholder="t('folder_protection', 'folder_name')"
+                                    :placeholder="t('folder_protection', 'folder or folder/sub/target')"
                                     required
                                 />
                             </div>
                             <p class="form-hint">
-                                {{ t('folder_protection', 'Full path will be: /files/{name}', { name: newFolder.folderName || 'folder_name' }) }}
+                                {{ t('folder_protection', 'Full path will be: /files/{name}', { name: newFolder.folderName || 'folder/sub/target' }) }}
+                                <span v-if="existsChecking" class="exists-checking">⏳</span>
+                                <span v-else-if="existsResult === true" class="exists-ok">✔ {{ t('folder_protection', 'Folder found') }}</span>
+                            </p>
+                            <p v-if="existsResult === false" class="form-error">
+                                ❌ {{ t('folder_protection', 'Folder not found. Create it first or check the path.') }}
+                            </p>
+                            <p v-if="existsResult === 'file'" class="form-error">
+                                ❌ {{ t('folder_protection', 'This path points to a file, not a folder.') }}
                             </p>
                             <p v-if="matchingGroupFolder" class="form-warning">
                                 ⚠️ {{ t('folder_protection', '"{name}" is a Group Folder. Use the Group Folders tab for full protection — this custom path only blocks name creation but does not protect the group folder from deletion or move.', { name: newFolder.folderName }) }}
@@ -182,7 +190,7 @@
                             <button type="button" @click="closeModal" class="button">
                                 {{ t('folder_protection', 'Cancel') }}
                             </button>
-                            <button type="submit" class="button primary" :disabled="submitting || !!matchingGroupFolder">
+                            <button type="submit" class="button primary" :disabled="!canSubmit">
                                 {{ submitting ? t('folder_protection', 'Adding...') : t('folder_protection', 'Add Protection') }}
                             </button>
                         </div>
@@ -228,6 +236,11 @@ export default {
             pendingGroupFolder: null,
             pendingReason: '',
             showReasonDialog: false,
+
+            // Existence check
+            existsChecking: false,
+            existsResult: null,  // null=unchecked, true=exists, false=not found, 'file'=is a file
+            existsDebounce: null,
         }
     },
 
@@ -235,11 +248,28 @@ export default {
         this.loadFolders()
     },
 
+    watch: {
+        'newFolder.folderName'(val) {
+            this.existsResult = null
+            clearTimeout(this.existsDebounce)
+            if (!val || !val.trim()) return
+            this.existsDebounce = setTimeout(() => this.checkFolderExists(), 500)
+        },
+    },
+
     computed: {
         matchingGroupFolder() {
             if (!this.groupFoldersAvailable || !this.newFolder.folderName) return null
-            const name = this.newFolder.folderName.trim().replace(/^\/+/, '')
-            return this.groupFolders.find(gf => gf.mountPoint === name) || null
+            // Only the first path segment matters for group folder matching
+            const firstSegment = this.newFolder.folderName.trim().replace(/^\/+/, '').split('/')[0]
+            return this.groupFolders.find(gf => gf.mountPoint === firstSegment) || null
+        },
+        canSubmit() {
+            if (this.submitting) return false
+            if (!!this.matchingGroupFolder) return false
+            // Block if checked and doesn't exist (null = still checking or not yet checked → allow)
+            if (this.existsResult === false || this.existsResult === 'file') return false
+            return true
         },
     },
 
@@ -259,10 +289,35 @@ export default {
             }
         },
 
+        async checkFolderExists() {
+            const name = this.newFolder.folderName.trim()
+            if (!name) { this.existsResult = null; return }
+            const fullPath = '/files/' + name.replace(/^\/+/, '')
+            this.existsChecking = true
+            try {
+                const response = await axios.get(generateUrl('/apps/folder_protection/api/exists'), {
+                    params: { path: fullPath }
+                })
+                const { exists, isFile } = response.data
+                if (exists === null) {
+                    this.existsResult = null  // couldn't determine — don't block
+                } else if (exists && isFile) {
+                    this.existsResult = 'file'
+                } else {
+                    this.existsResult = exists ? true : false
+                }
+            } catch {
+                this.existsResult = null  // on error, don't block
+            } finally {
+                this.existsChecking = false
+            }
+        },
+
         async openAddModal() {
             this.showAddModal = true
             this.error = null
             this.newFolder = { folderName: '', reason: '' }
+            this.existsResult = null
             this.activeTab = 'groupfolders'  // Resetar para o tab por defeito ao reabrir
             await this.loadGroupFolders()
         },
@@ -658,6 +713,26 @@ export default {
     background: var(--color-error);
     color: white;
     border-radius: var(--border-radius);
+}
+
+.form-error {
+    margin-top: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: var(--color-error, #e9322d);
+    color: #fff;
+    border-radius: var(--border-radius);
+    line-height: 1.4;
+}
+
+.exists-ok {
+    color: var(--color-success, #46ba61);
+    margin-left: 6px;
+}
+
+.exists-checking {
+    margin-left: 6px;
+    opacity: 0.7;
 }
 
 .path-input-wrapper {
