@@ -5,23 +5,34 @@
     <name>Folder Protection</name>
     <summary>Protect folders from being moved, copied, or deleted</summary>
     <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
-    <version>0.1.0</version>
+    <version>2.1.1</version>
     <licence>agpl</licence>
-    <author>Ricardo</author>
+    <author mail="rsfneg@gmail.com">Ricardo Ferreira</author>
     <namespace>FolderProtection</namespace>
     <category>files</category>
     
     <dependencies>
-        <nextcloud min-version="31" max-version="31"/>
+        <php min-version="8.1"/>
+        <nextcloud min-version="28" max-version="32"/>
     </dependencies>
+    <website>https://github.com/kreotropic/folder_protection</website>
+    <bugs>https://github.com/kreotropic/folder_protection/issues</bugs>
+    <repository>https://github.com/kreotropic/folder_protection</repository>
+
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Admin_Interface.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Add_Protection_Interface.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Protected_Folder.png</screenshot>
+
     <commands>
         <command>OCA\FolderProtection\Command\ListProtected</command>
         <command>OCA\FolderProtection\Command\Protect</command>
         <command>OCA\FolderProtection\Command\Unprotect</command>
         <command>OCA\FolderProtection\Command\CheckProtection</command>
+        <command>OCA\FolderProtection\Command\ClearNotifications</command>
     </commands>
     
     <settings>
+        <admin-section>OCA\FolderProtection\Settings\AdminSection</admin-section>
         <admin>OCA\FolderProtection\Settings\AdminSettings</admin>
     </settings>
 

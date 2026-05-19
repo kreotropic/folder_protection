@@ -6,6 +6,9 @@ namespace OCA\FolderProtection\AppInfo;
 use OC\Files\Filesystem;
 use OCA\FolderProtection\ProtectionChecker;
 use OCA\FolderProtection\StorageWrapper;
+use OCA\FolderProtection\DAV\ProtectionPlugin;
+use OCA\FolderProtection\DAV\ProtectionPropertyPlugin;
+use OCA\FolderProtection\DAV\LockPlugin;
 use OCA\FolderProtection\Listener\SabrePluginListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -37,6 +40,12 @@ use OCA\DAV\Events\SabrePluginAuthInitEvent;
  */
 class Application extends App implements IBootstrap {
     public const APP_ID = 'folder_protection';
+    private const STORAGE_WRAPPER_PRIORITY = -10;
+    /**
+     * Evita registar o wrapper várias vezes se o hook for chamado múltiplas vezes.
+     * Nota: não tipado para compatibilidade com PHP 7.x/8.x.
+     */
+    private static $wrapperRegistered = false;
 
     /**
      * Construtor da aplicação.
@@ -67,6 +76,31 @@ class Application extends App implements IBootstrap {
             return new ProtectionChecker(
                 $c->get(\OCP\IDBConnection::class),
                 $c->get(\OCP\ICacheFactory::class)
+            );
+        });
+
+        // Regista o ProtectionPlugin (Lógica DAV)
+        $context->registerService(ProtectionPlugin::class, function ($c) {
+            return new ProtectionPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class),
+                $c->get(\OCP\L10N\IFactory::class)->get('folder_protection')
+            );
+        });
+
+        // Regista o ProtectionPropertyPlugin (Propriedades DAV)
+        $context->registerService(ProtectionPropertyPlugin::class, function ($c) {
+            return new ProtectionPropertyPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o LockPlugin (Gerência automática de locks WebDAV)
+        $context->registerService(LockPlugin::class, function ($c) {
+            return new LockPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
             );
         });
 
@@ -103,9 +137,24 @@ class Application extends App implements IBootstrap {
             );
         });
 
+        $context->registerService(\OCA\FolderProtection\Command\ClearNotifications::class, function ($c) {
+            return new \OCA\FolderProtection\Command\ClearNotifications(
+                $c->get(\OCA\FolderProtection\ProtectionChecker::class)
+            );
+        });
+
         // Regista as definições de admin
         $context->registerService(\OCA\FolderProtection\Settings\AdminSettings::class, function ($c) {
             return new \OCA\FolderProtection\Settings\AdminSettings();
+        });
+
+        // Regista o Notifier para notificações
+        // Nota: registerNotifier() não existe no NC31; usamos registerService() para DI.
+        // O sistema de notificações descobre o notifier via info.xml <notifications>.
+        $context->registerService(\OCA\FolderProtection\Notification\Notifier::class, function ($c) {
+            return new \OCA\FolderProtection\Notification\Notifier(
+                $c->get(\OCP\L10N\IFactory::class)
+            );
         });
 
         // Regista o hook que irá adicionar o StorageWrapper
@@ -125,7 +174,7 @@ class Application extends App implements IBootstrap {
         
         // ✅ Carregar script SEMPRE (não apenas em Files)
         \OCP\Util::addScript(self::APP_ID, 'folder-protection-ui');
-        
+
         $logger->debug('FolderProtection: UI script registered globally');
     }
 
@@ -137,9 +186,22 @@ class Application extends App implements IBootstrap {
      * @internal
      */
     public function addStorageWrapper(): void {
-        error_log("FolderProtection: addStorageWrapper() called via hook");
-        // Adiciona wrapper com prioridade negativa (prioritário)
-        Filesystem::addStorageWrapper('folder_protection', [$this, 'addStorageWrapperCallback'], -10);
+        $logger = $this->getContainer()->get(LoggerInterface::class);
+        if (self::$wrapperRegistered) {
+            $logger->debug('FolderProtection: addStorageWrapper() already registered; skipping');
+            return;
+        }
+
+        try {
+            $logger->debug('FolderProtection: addStorageWrapper() called via hook - registering wrapper');
+            // Adiciona wrapper com prioridade negativa (prioritário)
+            Filesystem::addStorageWrapper('folder_protection', [$this, 'addStorageWrapperCallback'], self::STORAGE_WRAPPER_PRIORITY);
+            self::$wrapperRegistered = true;
+            $logger->info('FolderProtection: StorageWrapper registered', ['priority' => self::STORAGE_WRAPPER_PRIORITY]);
+        } catch (\Throwable $e) {
+            // Nunca deixar o hook causar uma falha global; logar o erro
+            $logger->error('FolderProtection: Failed to add StorageWrapper', ['exception' => $e]);
+        }
     }
 
     /**
@@ -153,17 +215,26 @@ class Application extends App implements IBootstrap {
      * @internal
      */
     public function addStorageWrapperCallback(string $mountPoint, IStorage $storage): IStorage {
-        error_log("FolderProtection: wrapper callback for mountPoint: $mountPoint");
+        $logger = $this->getContainer()->get(LoggerInterface::class);
+        $logger->debug('FolderProtection: wrapper callback for mountPoint', ['mountPoint' => $mountPoint]);
 
         // Só aplica o wrapper se não estamos em CLI e não é a raiz
-        if (!OC::$CLI && $mountPoint !== '/') {
+        if (OC::$CLI || $mountPoint === '/') {
+            return $storage;
+        }
+
+        try {
             $protectionChecker = $this->getContainer()->get(ProtectionChecker::class);
             return new StorageWrapper([
                 'storage' => $storage,
                 'protectionChecker' => $protectionChecker,
+                'mountPoint' => $mountPoint,
             ]);
+        } catch (\Throwable $e) {
+            // Logar e falhar com segurança retornando o storage original
+            $logger->error('FolderProtection: Failed to create StorageWrapper, returning original storage', ['mountPoint' => $mountPoint, 'exception' => $e]);
+            return $storage;
         }
-
-        return $storage;
     }
+
 }

@@ -26,6 +26,9 @@ class ProtectionPropertyPlugin extends ServerPlugin {
     const PROP_IS_RENAMEABLE = '{http://nextcloud.org/ns}is-renameable';
     const PROP_IS_MOVEABLE = '{http://nextcloud.org/ns}is-moveable';
 
+    // Propriedade OwnCloud de permissões — lida pelo cliente desktop para decidir operações
+    const PROP_OC_PERMISSIONS = '{http://owncloud.org/ns}permissions';
+
     public function __construct(
         ProtectionChecker $protectionChecker,
         LoggerInterface $logger
@@ -39,8 +42,10 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      */
     public function initialize(\Sabre\DAV\Server $server): void {
         $this->server = $server;
-        $server->on('propFind', [$this, 'propFind']);
-        
+        // Prioridade 150: corre DEPOIS do FilesPlugin do core (prioridade 100 default)
+        // para podermos ler e sobrepor oc:permissions já calculado pelo core
+        $server->on('propFind', [$this, 'propFind'], 150);
+
         $this->logger->debug('FolderProtection: ProtectionPropertyPlugin initialized');
     }
 
@@ -48,14 +53,14 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      * Handler para PROPFIND - adiciona propriedades customizadas
      */
     public function propFind(PropFind $propFind, INode $node): void {
+        $path = $this->getNodePath($node, $propFind->getPath());
+
         // Só aplicar a ficheiros e diretórios do Nextcloud
         if (!($node instanceof \OCA\DAV\Connector\Sabre\Directory) && 
             !($node instanceof \OCA\DAV\Connector\Sabre\File)) {
             return;
         }
 
-        $path = $this->getNodePath($node);
-        
         // Se não conseguimos determinar o path, skip
         if (empty($path)) {
             return;
@@ -89,28 +94,64 @@ class ProtectionPropertyPlugin extends ServerPlugin {
         $propFind->handle(self::PROP_IS_MOVEABLE, function() use ($isProtected) {
             return $isProtected ? 'false' : 'true';
         });
+
+        // 4. Remover 'D' (delete) de oc:permissions para pastas protegidas.
+        //
+        // Raciocínio: sem 'D', o cliente desktop sabe que não pode apagar/mover a pasta
+        // e não tenta fazê-lo. Desta forma a pasta nunca desaparece localmente.
+        //
+        // Comportamento equivalente ao das group folders: o ACLStorageWrapper do app groupfolders
+        // remove o bit DELETE de getPermissions() quando ACL o proíbe, e o cliente desktop trata
+        // a pasta como não-eliminável — nunca envia DELETE, nunca marca como "sync error",
+        // a pasta mantém-se visível.
+        //
+        // Sem esta remoção, o cliente vê 'D', tenta DELETE → recebe 403 do ProtectionPlugin →
+        // marca o item como "sync error" permanente → pasta desaparece localmente e não volta.
+        //
+        // A protecção real (bloquear DELETE/MOVE/COPY mesmo que o cliente tente) continua
+        // garantida pelo ProtectionPlugin em beforeUnbind/beforeMove/beforeBind.
+        if ($isProtected) {
+            // PropFind::get() force-avalia o lazy callback registado pelo FilesPlugin (prioridade 100)
+            // e devolve a string de permissões actual (ex: "RGDNVCK").
+            // PropFind::set() substitui o valor para todos os clientes que peçam esta propriedade.
+            $currentPerms = $propFind->get(self::PROP_OC_PERMISSIONS);
+            if (is_string($currentPerms) && $currentPerms !== '') {
+                $propFind->set(self::PROP_OC_PERMISSIONS, str_replace('D', '', $currentPerms));
+                $this->logger->debug("FolderProtection PROPFIND: stripped 'D' from oc:permissions for '$path' (was: '$currentPerms')");
+            }
+        }
     }
 
     /**
-     * Extrair path interno do node
+     * Extrair path interno do node, com suporte a group folders.
+     *
+     * @param INode  $node  DAV node being inspected
+     * @param string $uri   Path of the node relative to the DAV tree root (e.g. 'files/ncadmin/folder').
+     *                      Provided by PropFind::getPath() — already in the correct format for regular nodes.
      */
-    private function getNodePath(INode $node): string {
+    private function getNodePath(INode $node, string $uri = ''): string {
         try {
             if (method_exists($node, 'getFileInfo')) {
                 $fileInfo = $node->getFileInfo();
-                $path = $fileInfo->getInternalPath();
-                
-                // Normalizar path: deve começar com /files/
-                if (strpos($path, '__groupfolders/') === 0) {
-                    // Group folder: /__groupfolders/ID ou /files/nome
-                    // Vamos usar o path como está
-                    return '/' . $path;
+
+                // Detect group folder: traverse storage wrapper chain
+                $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+                if ($folderId !== null) {
+                    $subPath = $fileInfo->getInternalPath();
+                    $groupPath = '/__groupfolders/' . $folderId;
+                    if (!empty($subPath) && $subPath !== '.') {
+                        $groupPath .= '/' . ltrim($subPath, '/');
+                    }
+                    return $groupPath;
                 }
-                
+
+                // Pasta normal: usar o internal path do storage (ex: 'files/normal')
+                // que corresponde ao formato guardado na DB (normalizado para '/files/normal').
+                // NÃO usar o URI DAV (ex: 'files/ncadmin/normal') que inclui o username.
+                $path = $fileInfo->getInternalPath();
                 if (strpos($path, 'files/') !== 0) {
                     $path = 'files/' . ltrim($path, '/');
                 }
-                
                 return '/' . $path;
             }
         } catch (\Exception $e) {
@@ -118,8 +159,24 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                 'exception' => $e->getMessage()
             ]);
         }
-        
+
         return '';
+    }
+
+    /**
+     * Traverse the storage wrapper chain to find a GroupFolder storage with getFolderId().
+     */
+    private function getGroupFolderIdFromStorage($storage): ?int {
+        $curr = $storage;
+        $depth = 0;
+        while ($curr !== null && $depth < 20) {
+            if (method_exists($curr, 'getFolderId')) {
+                return (int)$curr->getFolderId();
+            }
+            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
+            $depth++;
+        }
+        return null;
     }
 
     /**
