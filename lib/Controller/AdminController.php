@@ -4,19 +4,29 @@ declare(strict_types=1);
 namespace OCA\FolderProtection\Controller;
 
 use OCA\FolderProtection\ProtectionChecker;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http\Attribute\AdminRequired;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\Files\IRootFolder;
+use OCP\Files\Folder;
 use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\ICacheFactory;
+use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
 class AdminController extends Controller {
-    
+
     private IDBConnection $db;
     private ProtectionChecker $protectionChecker;
     private LoggerInterface $logger;
     private ICacheFactory $cacheFactory;
+    private IAppManager $appManager;
+    private IUserSession $userSession;
+    private IRootFolder $rootFolder;
 
     public function __construct(
         string $appName,
@@ -24,20 +34,26 @@ class AdminController extends Controller {
         IDBConnection $db,
         ProtectionChecker $protectionChecker,
         LoggerInterface $logger,
-        ICacheFactory $cacheFactory
+        ICacheFactory $cacheFactory,
+        IAppManager $appManager,
+        IUserSession $userSession,
+        IRootFolder $rootFolder
     ) {
         parent::__construct($appName, $request);
         $this->db = $db;
         $this->protectionChecker = $protectionChecker;
         $this->logger = $logger;
         $this->cacheFactory = $cacheFactory;
+        $this->appManager = $appManager;
+        $this->userSession = $userSession;
+        $this->rootFolder = $rootFolder;
     }
 
     /**
-     * List all protected folders
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * List all protected folders (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function list(): JSONResponse {
         try {
             $qb = $this->db->getQueryBuilder();
@@ -47,7 +63,7 @@ class AdminController extends Controller {
 
             $result = $qb->executeQuery();
             $folders = [];
-            
+
             while ($row = $result->fetch()) {
                 $folders[] = [
                     'id' => (int)$row['id'],
@@ -60,6 +76,20 @@ class AdminController extends Controller {
                 ];
             }
             $result->closeCursor();
+
+            // annotate groupfolders with their visible mountPoint if available
+            if ($this->appManager->isInstalled('groupfolders')) {
+                $mountPoints = $this->fetchGroupFolderMountPoints();
+                foreach ($folders as &$folder) {
+                    if (preg_match('#^/__groupfolders/(\d+)(/.*)?$#', $folder['path'], $m)) {
+                        $id = (int)$m[1];
+                        if (isset($mountPoints[$id])) {
+                            $folder['mountPoint'] = $mountPoints[$id];
+                        }
+                    }
+                }
+                unset($folder);
+            }
 
             return new JSONResponse([
                 'success' => true,
@@ -75,16 +105,17 @@ class AdminController extends Controller {
     }
 
     /**
-     * Protect a folder
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Protect a folder (admin only)
      */
-    public function protect(string $path, ?string $reason = null, ?string $userId = null): JSONResponse {
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function protect(string $path, ?string $reason = null): JSONResponse {
         try {
-            // Normalize path
             $path = $this->protectionChecker->normalizePath($path);
 
-            // Check if already protected
+            // Obtém o utilizador autenticado do lado do servidor (nunca do cliente)
+            $userId = $this->userSession->getUser()?->getUID() ?? '';
+
             if ($this->protectionChecker->isProtected($path)) {
                 return new JSONResponse([
                     'success' => false,
@@ -92,7 +123,6 @@ class AdminController extends Controller {
                 ], 400);
             }
 
-            // Insert into database
             $qb = $this->db->getQueryBuilder();
             $qb->insert('folder_protection')
                ->values([
@@ -104,9 +134,7 @@ class AdminController extends Controller {
                ]);
             $qb->executeStatement();
 
-            // Clear cache
-            $this->clearCacheInternal();
-
+            $this->protectionChecker->clearCacheForPath($path);
             $this->logger->info('Protected folder', ['path' => $path, 'user' => $userId]);
 
             return new JSONResponse([
@@ -124,16 +152,25 @@ class AdminController extends Controller {
     }
 
     /**
-     * Unprotect a folder
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Unprotect a folder (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function unprotect(int $id): JSONResponse {
         try {
+            // Busca o path antes de apagar para poder invalidar a cache específica
+            $qbSelect = $this->db->getQueryBuilder();
+            $qbSelect->select('path')
+                     ->from('folder_protection')
+                     ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
+            $selectResult = $qbSelect->executeQuery();
+            $row = method_exists($selectResult, 'fetchAssociative') ? $selectResult->fetchAssociative() : $selectResult->fetch();
+            $selectResult->closeCursor();
+
             $qb = $this->db->getQueryBuilder();
             $qb->delete('folder_protection')
                ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
-            
+
             $affected = $qb->executeStatement();
 
             if ($affected === 0) {
@@ -143,9 +180,12 @@ class AdminController extends Controller {
                 ], 404);
             }
 
-            // Clear cache
-            $this->clearCacheInternal();
-
+            if ($row && isset($row['path'])) {
+                $this->protectionChecker->clearCacheForPath($row['path']);
+            } else {
+                // Fallback: limpa tudo se não encontrou o path
+                $this->protectionChecker->clearCache();
+            }
             $this->logger->info('Unprotected folder', ['id' => $id]);
 
             return new JSONResponse([
@@ -162,10 +202,10 @@ class AdminController extends Controller {
     }
 
     /**
-     * Check if a path is protected
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Check if a path is protected (accessible to all users — read-only)
      */
+    #[NoAdminRequired]
+    #[NoCSRFRequired]
     public function check(string $path): JSONResponse {
         try {
             $path = $this->protectionChecker->normalizePath($path);
@@ -186,10 +226,10 @@ class AdminController extends Controller {
     }
 
     /**
-     * Clear protection cache
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Clear protection cache (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function clearCache(): JSONResponse {
         try {
             $this->clearCacheInternal();
@@ -207,27 +247,164 @@ class AdminController extends Controller {
         }
     }
 
-    private function clearCacheInternal(): void {
-        $cache = $this->cacheFactory->createDistributed('folder_protection');
-        $cache->clear();
+    /**
+     * List all group folders with their protection status (admin only)
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function listGroupFolders(): JSONResponse {
+        try {
+            if (!$this->appManager->isInstalled('groupfolders')) {
+                return new JSONResponse([
+                    'success' => true,
+                    'available' => false,
+                    'folders' => [],
+                ]);
+            }
+
+            // Fetch all group folders
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('folder_id', 'mount_point')->from('group_folders');
+            $result = $qb->executeQuery();
+            $groupFolders = [];
+            while ($row = $result->fetch()) {
+                $groupFolders[(int)$row['folder_id']] = $row['mount_point'];
+            }
+            $result->closeCursor();
+
+            // Fetch group folders protected via proper path (/__groupfolders/{id})
+            $qb2 = $this->db->getQueryBuilder();
+            $qb2->select('id', 'path', 'reason', 'created_by')
+                ->from('folder_protection')
+                ->where($qb2->expr()->like('path', $qb2->createNamedParameter('/__groupfolders/%')));
+            $result2 = $qb2->executeQuery();
+            $protected = [];
+            while ($row = $result2->fetch()) {
+                if (preg_match('#^/__groupfolders/(\d+)$#', $row['path'], $m)) {
+                    $protected[(int)$m[1]] = [
+                        'protection_id' => (int)$row['id'],
+                        'reason'        => $row['reason'],
+                        'created_by'    => $row['created_by'],
+                    ];
+                }
+            }
+            $result2->closeCursor();
+
+            // Detect group folders "protected" via /files/{mountPoint} (custom path — incomplete protection)
+            // These block basename creation but do NOT protect the actual group folder from DAV operations.
+            $qb3 = $this->db->getQueryBuilder();
+            $qb3->select('id', 'path', 'reason', 'created_by')
+                ->from('folder_protection')
+                ->where($qb3->expr()->like('path', $qb3->createNamedParameter('/files/%')));
+            $result3 = $qb3->executeQuery();
+            $customPathByName = [];
+            while ($row = $result3->fetch()) {
+                $basename = basename($row['path']);
+                $customPathByName[$basename] = [
+                    'protection_id' => (int)$row['id'],
+                    'reason'        => $row['reason'],
+                    'created_by'    => $row['created_by'],
+                    'path'          => $row['path'],
+                ];
+            }
+            $result3->closeCursor();
+
+            $folders = [];
+            foreach ($groupFolders as $id => $mountPoint) {
+                $isProtected        = isset($protected[$id]);
+                $isPartial          = !$isProtected && isset($customPathByName[$mountPoint]);
+                $data               = $isProtected ? $protected[$id] : ($isPartial ? $customPathByName[$mountPoint] : null);
+                $folders[] = [
+                    'id'               => $id,
+                    'mountPoint'       => $mountPoint,
+                    'path'             => '/__groupfolders/' . $id,
+                    'protected'        => $isProtected || $isPartial,
+                    'partialProtection'=> $isPartial,
+                    'protectionId'     => $data ? $data['protection_id'] : null,
+                    'reason'           => $data ? $data['reason'] : null,
+                    'createdBy'        => $data ? $data['created_by'] : null,
+                ];
+            }
+
+            return new JSONResponse([
+                'success'   => true,
+                'available' => true,
+                'folders'   => $folders,
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Error listing group folders', ['exception' => $e->getMessage()]);
+            return new JSONResponse([
+                'success' => false,
+                'message' => 'Error listing group folders: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
+    private function clearCacheInternal(): void {
+        $this->protectionChecker->clearCache();
+    }
 
-        /**
-     * Get protection status for folders (for web UI)
-     * @NoCSRFRequired
-     * @NoAdminRequired
+    /**
+     * Check if a custom path exists in the filesystem (admin only).
+     * Used by the admin UI to warn before protecting a non-existent folder.
+     * Checks against the currently logged-in admin's user folder.
+     * Group folder paths (/__groupfolders/...) are always reported as existing.
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function checkExists(string $path): JSONResponse {
+        try {
+            $path = $this->protectionChecker->normalizePath($path);
+
+            // Group folder paths are not in any user's home — always allow
+            if (str_starts_with($path, '/__groupfolders/')) {
+                return new JSONResponse(['exists' => true]);
+            }
+
+            $userId = $this->userSession->getUser()?->getUID();
+            if (!$userId) {
+                return new JSONResponse(['exists' => null]);
+            }
+
+            // Convert /files/A/B → /A/B for getUserFolder lookup
+            $relativePath = preg_replace('#^/files#', '', $path);
+
+            try {
+                $userFolder = $this->rootFolder->getUserFolder($userId);
+                if (!$userFolder->nodeExists($relativePath)) {
+                    return new JSONResponse(['exists' => false]);
+                }
+                $node = $userFolder->get($relativePath);
+                return new JSONResponse([
+                    'exists' => $node instanceof Folder,
+                    'isFile' => !($node instanceof Folder),
+                ]);
+            } catch (\OCP\Files\NotFoundException $e) {
+                return new JSONResponse(['exists' => false]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Error checking folder existence', ['exception' => $e->getMessage()]);
+            return new JSONResponse(['exists' => null]);
+        }
+    }
+
+    /**
+     * Get protection status for all folders (accessible to all users — used by UI badges)
+     *
+     * For group folder paths (/__groupfolders/N), also emits an alias at /files/<mountPoint>
+     * so that folder-protection-ui.js (which builds /files/<name> paths) can match them.
+     */
+    #[NoAdminRequired]
+    #[NoCSRFRequired]
     public function getFolderStatuses(): JSONResponse {
         try {
-            // Get all protected paths
             $qb = $this->db->getQueryBuilder();
             $qb->select('path', 'reason', 'created_by')
                 ->from('folder_protection');
-            
+
             $result = $qb->executeQuery();
             $protections = [];
-            
+
             while ($row = $result->fetch()) {
                 $protections[$row['path']] = [
                     'protected' => true,
@@ -236,7 +413,24 @@ class AdminController extends Controller {
                 ];
             }
             $result->closeCursor();
-            
+
+            // For group folder paths, also expose their visible mount-point path
+            // so the web UI can mark them with the lock icon.
+            if ($this->appManager->isInstalled('groupfolders')) {
+                $mountPoints = $this->fetchGroupFolderMountPoints();
+                $aliases = [];
+                foreach ($protections as $path => $info) {
+                    if (preg_match('#^/__groupfolders/(\d+)(/.*)?$#', $path, $m)) {
+                        $folderId = (int)$m[1];
+                        if (isset($mountPoints[$folderId])) {
+                            $subPath = $m[2] ?? '';
+                            $aliases['/files/' . $mountPoints[$folderId] . $subPath] = $info;
+                        }
+                    }
+                }
+                $protections = array_merge($protections, $aliases);
+            }
+
             return new JSONResponse([
                 'success' => true,
                 'protections' => $protections
@@ -245,11 +439,29 @@ class AdminController extends Controller {
             $this->logger->error('Error getting folder statuses', [
                 'exception' => $e->getMessage()
             ]);
-            
+
             return new JSONResponse([
                 'success' => false,
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Returns a map of folder_id => mount_point from the group_folders table.
+     * Only call this when the groupfolders app is confirmed to be installed.
+     *
+     * @return array<int, string>
+     */
+    private function fetchGroupFolderMountPoints(): array {
+        $qb = $this->db->getQueryBuilder();
+        $qb->select('folder_id', 'mount_point')->from('group_folders');
+        $result = $qb->executeQuery();
+        $map = [];
+        while ($row = $result->fetch()) {
+            $map[(int)$row['folder_id']] = $row['mount_point'];
+        }
+        $result->closeCursor();
+        return $map;
     }
 }

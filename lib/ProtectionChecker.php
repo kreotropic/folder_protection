@@ -46,20 +46,17 @@ class ProtectionChecker {
     public function isProtected(string $path): bool {
         $path = $this->normalizePath($path);
         // Verifica se o path está protegido (exact match). Usa cache para acelerar.
-        error_log("FolderProtection: ProtectionChecker checking path: '$path'");
 
         // Check cache first
         $cacheKey = 'protected_' . md5($path);
         $cached = $this->cache->get($cacheKey);
         if ($cached !== null) {
             // Cache hit: devolve resultado imediatamente.
-            error_log("FolderProtection: Cache hit for '$path': " . ($cached ? 'PROTECTED' : 'NOT PROTECTED'));
             return (bool)$cached;
         }
 
         // Check database
         $result = $this->checkDatabaseExact($path);
-        error_log("FolderProtection: Database check for '$path': " . ($result ? 'PROTECTED' : 'NOT PROTECTED'));
 
         // Cache result for 5 minutes
         $this->cache->set($cacheKey, $result ? 1 : 0, 300);
@@ -75,7 +72,6 @@ class ProtectionChecker {
 
         // Primeiro verifica o próprio path
         if ($this->isProtected($path)) {
-            error_log("FolderProtection: Path '$path' is directly protected");
             return true;
         }
 
@@ -89,7 +85,6 @@ class ProtectionChecker {
             }
             $currentPath .= '/' . $part;
             if ($this->isProtected($currentPath)) {
-                error_log("FolderProtection: Parent path '$currentPath' is protected for '$path'");
                 return true;
             }
         }
@@ -145,27 +140,81 @@ class ProtectionChecker {
     }
 
     /**
-     * PoC helper: verifica se existe alguma pasta protegida com o mesmo basename
-     * (útil como heurística para evitar copy-then-delete do client desktop)
+     * Verifica se existe alguma pasta protegida com o mesmo basename.
+     * Para group folders (stored como /__groupfolders/N), também verifica o mount_point
+     * (o nome visível da pasta) de modo a bloquear cópias via rename ou drag-and-drop.
      */
     public function isAnyProtectedWithBasename(string $basename): bool {
-        $basename = trim($basename, "/");
+        $basename = trim($basename, '/');
         if ($basename === '') {
             return false;
         }
 
         $protectedFolders = $this->getProtectedFolders();
-        
-        // Procura se existe algum path protegido com o mesmo basename
+
         foreach ($protectedFolders as $protectedPath) {
             if (basename($protectedPath) === $basename) {
-                error_log("FolderProtection: Found protected folder with basename '$basename': $protectedPath");
                 return true;
             }
         }
 
-        // Não encontrou nenhum
+        // Para group folders, o basename numérico (/__groupfolders/2) não bate com o nome visível.
+        // Verifica também contra os mount_point names registados no app groupfolders.
+        foreach ($this->getProtectedGroupFolderMountPoints() as $mountPoint) {
+            if ($mountPoint === $basename) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    /**
+     * Devolve os mount_point names das group folders protegidas.
+     * Retorna lista vazia se o app groupfolders não estiver instalado.
+     */
+    private function getProtectedGroupFolderMountPoints(): array {
+        $cacheKey = 'protected_gf_mountpoints';
+        $cached = $this->cache->get($cacheKey);
+        if ($cached !== null) {
+            return json_decode($cached, true) ?: [];
+        }
+
+        // Extrai os IDs das group folders protegidas
+        $groupFolderIds = [];
+        foreach ($this->getProtectedFolders() as $path) {
+            if (preg_match('#^/__groupfolders/(\d+)$#', $path, $m)) {
+                $groupFolderIds[] = (int)$m[1];
+            }
+        }
+
+        if (empty($groupFolderIds)) {
+            $this->cache->set($cacheKey, json_encode([]), 300);
+            return [];
+        }
+
+        try {
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('mount_point')
+               ->from('group_folders')
+               ->where($qb->expr()->in(
+                   'folder_id',
+                   $qb->createNamedParameter($groupFolderIds, \Doctrine\DBAL\Connection::PARAM_INT_ARRAY)
+               ));
+
+            $result = $qb->executeQuery();
+            $mountPoints = [];
+            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+                $mountPoints[] = $row['mount_point'];
+            }
+            $result->closeCursor();
+        } catch (\Exception $e) {
+            // Tabela group_folders não existe (app não instalado) — ignora silenciosamente
+            $mountPoints = [];
+        }
+
+        $this->cache->set($cacheKey, json_encode($mountPoints), 300);
+        return $mountPoints;
     }
 
     /**
@@ -187,34 +236,92 @@ class ProtectionChecker {
  * @param string $path
  * @return array|null ['id', 'path', 'reason', 'created_by', 'created_at'] ou null
  */
-public function getProtectionInfo(string $path): ?array {
-    $path = $this->normalizePath($path);
-    
-    // Check cache first
-    $cacheKey = 'folder_protection_info_' . md5($path);
-    if ($this->cache !== null) {
-        $cached = $this->cache->get($cacheKey);
-        if ($cached !== null) {
-            return $cached ?: null;
+    public function getProtectionInfo(string $path): ?array {
+        $path = $this->normalizePath($path);
+        
+        // Check cache first
+        // Guardamos false para "não encontrado" e array para "encontrado".
+        // Não podemos usar `$cached ?: null` porque false ?: null = null (cache miss falso).
+        $cacheKey = 'folder_protection_info_' . md5($path);
+        if ($this->cache !== null) {
+            $cached = $this->cache->get($cacheKey);
+            if ($cached !== null) {
+                return $cached === false ? null : $cached;
+            }
         }
+        
+        // Query database
+        $qb = $this->db->getQueryBuilder();
+        $qb->select('*')
+            ->from('folder_protection')
+            ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
+        
+        $result = $qb->executeQuery();
+        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $result->closeCursor();
+        
+        // Cache result
+        if ($this->cache !== null) {
+            $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
+        }
+        
+        return $row ?: null;
     }
-    
-    // Query database
-    $qb = $this->db->getQueryBuilder();
-    $qb->select('*')
-        ->from('folder_protection')
-        ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
-    
-    $result = $qb->executeQuery();
-    $row = $result->fetch();
-    $result->closeCursor();
-    
-    // Cache result
-    if ($this->cache !== null) {
-        $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
-    }
-    
-    return $row ?: null;
-}
 
+    /**
+     * Verifica se algum path protegido é descendente directo de $path.
+     * Útil para bloquear a eliminação/movimento de uma pasta pai quando
+     * uma das suas subpastas está protegida.
+     * Ex: se '/files/A/B/C' está protegido, hasProtectedDescendant('/files/A') → true
+     */
+    public function hasProtectedDescendant(string $path): bool {
+        $path = $this->normalizePath($path);
+        $prefix = rtrim($path, '/') . '/';
+
+        foreach ($this->getProtectedFolders() as $protectedPath) {
+            $normalized = $this->normalizePath($protectedPath);
+            if (str_starts_with($normalized, $prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Verifica se deve enviar notificação (Rate Limiting)
+     * Evita spam de notificações para a mesma pasta/ação num curto período.
+     * TTL: 30 minutos (1800 segundos)
+     */
+    public function shouldNotify(string $path, string $action): bool {
+        $cacheKey = 'notification_sent_' . md5($path) . '_' . $action;
+        
+        if ($this->cache->get($cacheKey)) {
+            return false;
+        }
+        
+        $this->cache->set($cacheKey, 1, 1800);
+        return true;
+    }
+
+    /**
+     * Limpa as entradas de cache relacionadas com um path específico.
+     * Chamado após protect/unprotect para invalidar apenas o necessário,
+     * sem afetar entradas de outros paths ou rate limiting de notificações.
+     */
+    public function clearCacheForPath(string $path): void {
+        $path = $this->normalizePath($path);
+        $this->cache->remove('protected_' . md5($path));
+        $this->cache->remove('folder_protection_info_' . md5($path));
+        // A lista global e os mount points também precisam de ser invalidados
+        $this->cache->remove('all_protected_folders');
+        $this->cache->remove('protected_gf_mountpoints');
+    }
+
+    /**
+     * Limpa toda a cache da aplicação (incluindo rate limiting de notificações).
+     * Usar apenas quando necessário (ex: comando occ cache:clear).
+     */
+    public function clearCache(): void {
+        $this->cache->clear();
+    }
 }
