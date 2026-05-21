@@ -39,10 +39,12 @@ class Version002001000Date20260521000000 extends SimpleMigrationStep {
         $changed = false;
 
         if (!$table->hasColumn('path_hash')) {
+            // Must be nullable here: adding NOT NULL to a table with existing rows
+            // triggers a DBAL validation error ("NotNull but has empty default").
+            // postSchemaChange populates all NULLs immediately after.
             $table->addColumn('path_hash', Types::STRING, [
-                'notnull' => true,
+                'notnull' => false,
                 'length'  => 32,
-                'default' => '',
             ]);
             $changed = true;
         }
@@ -52,6 +54,8 @@ class Version002001000Date20260521000000 extends SimpleMigrationStep {
             $changed = true;
         }
 
+        // Unique index on a nullable column is safe: NULL values never collide.
+        // After postSchemaChange all rows will have a non-null hash.
         if (!$table->hasIndex('fp_path_hash_idx')) {
             $table->addUniqueIndex(['path_hash'], 'fp_path_hash_idx');
             $changed = true;
@@ -64,12 +68,12 @@ class Version002001000Date20260521000000 extends SimpleMigrationStep {
         $qb = $this->connection->getQueryBuilder();
         $qb->select('id', 'path')
            ->from('folder_protection')
-           ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter('')));
+           ->where($qb->expr()->isNull('path_hash'));
 
         $result = $qb->executeQuery();
         $count = 0;
 
-        while ($row = $result->fetchAssociative()) {
+        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
             $trimmed = trim((string)$row['path'], '/');
             $normalized = $trimmed === '' ? '/' : '/' . $trimmed;
 
