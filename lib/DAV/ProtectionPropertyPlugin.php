@@ -145,11 +145,16 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                     return $groupPath;
                 }
 
-                // Pasta normal: usar o internal path do storage (ex: 'files/normal')
-                // que corresponde ao formato guardado na DB (normalizado para '/files/normal').
-                // NÃO usar o URI DAV (ex: 'files/ncadmin/normal') que inclui o username.
-                $path = $fileInfo->getInternalPath();
-                if (strpos($path, 'files/') !== 0) {
+                // Reconstruct the full user-relative path.
+                // For home storage the internal path is already in 'files/folder' format.
+                // For external storage prepend the mount-point suffix (stripped of username).
+                $path        = $fileInfo->getInternalPath();
+                $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
+                if ($mountSuffix !== '') {
+                    $suffix = ltrim($mountSuffix, '/');
+                    $inner  = ltrim($path, '/');
+                    $path   = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
+                } elseif (strpos($path, 'files/') !== 0) {
                     $path = 'files/' . ltrim($path, '/');
                 }
                 return '/' . $path;

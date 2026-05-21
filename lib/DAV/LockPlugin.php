@@ -147,12 +147,15 @@ class LockPlugin extends ServerPlugin {
         try {
             if (method_exists($node, 'getFileInfo')) {
                 $fileInfo = $node->getFileInfo();
-                $path = $fileInfo->getInternalPath();
-                
-                if (strpos($path, 'files/') !== 0) {
+                $path        = $fileInfo->getInternalPath();
+                $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
+                if ($mountSuffix !== '') {
+                    $suffix = ltrim($mountSuffix, '/');
+                    $inner  = ltrim($path, '/');
+                    $path   = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
+                } elseif (strpos($path, 'files/') !== 0) {
                     $path = 'files/' . ltrim($path, '/');
                 }
-                
                 return '/' . $path;
             }
         } catch (\Exception $e) {
@@ -160,7 +163,7 @@ class LockPlugin extends ServerPlugin {
                 'error' => $e->getMessage()
             ]);
         }
-        
+
         return '';
     }
 
