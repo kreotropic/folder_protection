@@ -93,9 +93,6 @@ class StorageWrapper extends Wrapper {
             $this->sendProtectionNotification($source, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
-        if ($this->protectionChecker->isAnyProtectedWithBasename(basename($target))) {
-            throw new FolderLocked('Cannot create folders with protected names.', false);
-        }
         return $this->storage->copy($source, $target);
     }
 
@@ -135,10 +132,6 @@ class StorageWrapper extends Wrapper {
             throw new FolderLocked('Cannot copy into protected folders.', false);
         }
 
-        if ($this->protectionChecker->isAnyProtectedWithBasename(basename($targetInternalPath))) {
-            throw new FolderLocked('Cannot create folders with protected names.', false);
-        }
-
         return parent::copyFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
     }
 
@@ -173,9 +166,6 @@ class StorageWrapper extends Wrapper {
         if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             $this->sendProtectionNotification($path, 'create');
             throw new FolderLocked('Cannot create directory: target is protected or inside a protected folder.', false);
-        }
-        if ($this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
-            throw new FolderLocked('Cannot create directory with this name because a protected folder exists.', false);
         }
         return $this->storage->mkdir($path);
     }
