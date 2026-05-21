@@ -122,20 +122,21 @@ class ProtectionChecker {
     }
 
     /**
-     * Verifica se existe uma entrada EXACTA na tabela folder_protection
+     * Verifica se existe uma entrada EXACTA na tabela folder_protection.
+     * Usa path_hash (MD5 do path normalizado) para o lookup — o índice único
+     * está em path_hash, não em path, para contornar o limite de 3072 bytes
+     * do InnoDB em MySQL/MariaDB com utf8mb4.
      */
     private function checkDatabaseExact(string $path): bool {
         $qb = $this->db->getQueryBuilder();
         $qb->select('id')
            ->from('folder_protection')
-           ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
+           ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter(md5($path))));
 
         $result = $qb->executeQuery();
-        // usar fetchAssociative quando disponível
         $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
         $result->closeCursor();
 
-        // Retorna true se encontrou uma linha (path protegido)
         return $row !== false && $row !== null;
     }
 
@@ -254,7 +255,7 @@ class ProtectionChecker {
         $qb = $this->db->getQueryBuilder();
         $qb->select('*')
             ->from('folder_protection')
-            ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
+            ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter(md5($path))));
         
         $result = $qb->executeQuery();
         $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
