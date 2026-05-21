@@ -409,17 +409,7 @@
             const np = this.normalizePath(fullPath);
             if (this.state.normalizedProtected?.has(np)) return true;
 
-            // Check if any parent is protected
-            let curr = np;
-            while (curr && curr !== '/') {
-                const parent = curr.replace(/\/[^\/]*$/, '') || '/';
-                if (this.state.normalizedProtected?.has(parent)) return true;
-                if (parent === curr) break;
-                curr = parent;
-            }
-
-            // Check if any protected path is a descendant of this path
-            // (ancestor folders of a deep-protected folder also show the lock)
+            // Show lock on ancestor folders that contain a protected descendant
             const prefix = np.endsWith('/') ? np : np + '/';
             for (const protectedPath of this.state.normalizedProtected) {
                 if (protectedPath.startsWith(prefix)) return true;
