@@ -24,6 +24,7 @@
             protectedClass: 'fp-protected',
             checkInterval: 100,
             maxCheckAttempts: 50,
+            lockToggleKey: 'fp_show_locks',
             debug: false
         },
 
@@ -32,7 +33,8 @@
             normalizedProtected: new Set(),
             initialized: false,
             observer: null,
-            currentDir: null  // Track current directory to detect navigation
+            currentDir: null,
+            showLocks: true
         },
 
         log(...args) {
@@ -45,10 +47,13 @@
 
         async init() {
             this.log('[FolderProtection] Initializing');
-            
+
+            const saved = localStorage.getItem(this.config.lockToggleKey);
+            this.state.showLocks = saved !== 'false';
+
             await this.loadProtectedFolders();
             this.injectStyles();
-            
+
             this.waitForFilesApp().then(() => {
                 this.state.currentDir = this.getCurrentDirectory();
                 this.setupEventListeners();
@@ -157,6 +162,7 @@
                 .files-list__row.${this.config.protectedClass} [data-action="copy"] {
                     display: none !important;
                 }
+
             `;
 
             const styleEl = document.createElement('style');
@@ -342,9 +348,26 @@
          * @param {HTMLElement} row - The table row element
          * @param {string} currentDir - Pre-computed current directory (avoid repeated DOM reads)
          */
+        setLocksVisible(visible) {
+            this.state.showLocks = visible;
+            localStorage.setItem(this.config.lockToggleKey, visible);
+            if (visible) {
+                this.markProtectedFolders();
+            } else {
+                this.clearAllMarkers();
+            }
+        },
+
         processRow(row, currentDir) {
             const filename = row.getAttribute('data-cy-files-list-row-name');
             if (!filename) return;
+
+            if (!this.state.showLocks) {
+                if (row.classList.contains(this.config.protectedClass)) {
+                    row.classList.remove(this.config.protectedClass);
+                }
+                return;
+            }
 
             const fullPath = this.buildFullPath(currentDir, filename);
             const isProtected = this.isFolderProtected(fullPath);

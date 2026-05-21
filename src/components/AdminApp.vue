@@ -8,6 +8,14 @@
             </button>
         </div>
 
+        <!-- Preferências de visualização -->
+        <div class="display-settings">
+            <label class="lock-toggle-label">
+                <input type="checkbox" v-model="showLocks" @change="onToggleLocks" />
+                🔒 {{ t('folder_protection', 'Show lock icons on protected folders in the file list') }}
+            </label>
+        </div>
+
         <!-- Indicador de carregamento -->
         <div v-if="loading" class="loading-container">
             <span class="icon-loading"></span>
@@ -221,6 +229,7 @@ export default {
         return {
             folders: [],
             loading: true,
+            showLocks: localStorage.getItem('fp_show_locks') !== 'false',
             showAddModal: false,
             submitting: false,
             error: null,
@@ -274,6 +283,11 @@ export default {
     },
 
     methods: {
+        onToggleLocks() {
+            localStorage.setItem('fp_show_locks', this.showLocks)
+            window.FolderProtectionUI?.setLocksVisible(this.showLocks)
+        },
+
         async loadFolders() {
             this.loading = true
             try {
@@ -476,7 +490,23 @@ export default {
 }
 
 .add-protection-section {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+}
+
+.display-settings {
+    margin-bottom: 24px;
+    padding: 12px 16px;
+    background: var(--color-background-hover);
+    border-radius: var(--border-radius-large);
+}
+
+.lock-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    user-select: none;
 }
 
 .loading-container {
