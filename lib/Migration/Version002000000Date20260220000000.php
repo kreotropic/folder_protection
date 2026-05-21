@@ -39,6 +39,15 @@ class Version002000000Date20260220000000 extends SimpleMigrationStep {
                 'length' => 4000,
             ]);
 
+            // MD5 of the normalised path — used as the unique index key.
+            // VARCHAR(4000) cannot be indexed on MySQL/MariaDB (InnoDB limit is
+            // 3072 bytes with utf8mb4); path_hash sidesteps that constraint.
+            $table->addColumn('path_hash', Types::STRING, [
+                'notnull' => true,
+                'length' => 32,
+                'default' => '',
+            ]);
+
             $table->addColumn('file_id', Types::BIGINT, [
                 'notnull' => false,
             ]);
@@ -66,8 +75,7 @@ class Version002000000Date20260220000000 extends SimpleMigrationStep {
             ]);
 
             $table->setPrimaryKey(['id']);
-            // shorter index names to stay under MySQL 64‑char limit once prefixed
-            $table->addUniqueIndex(['path'], 'fp_path_idx');
+            $table->addUniqueIndex(['path_hash'], 'fp_path_hash_idx');
             $table->addIndex(['file_id'], 'fp_file_id_idx');
             $table->addIndex(['created_at'], 'fp_created_idx');
 

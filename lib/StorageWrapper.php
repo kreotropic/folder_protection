@@ -102,6 +102,10 @@ class StorageWrapper extends Wrapper {
             $this->sendProtectionNotification($source, 'move');
             throw new FolderLocked("Moving protected folders is not allowed");
         }
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($target))) {
+            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename to protected path: $target");
+            throw new FolderLocked("Cannot move or rename to a protected folder path");
+        }
         return $this->storage->rename($source, $target);
     }
 
@@ -139,6 +143,9 @@ class StorageWrapper extends Wrapper {
         if ($this->protectionChecker->isProtected($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'move');
             throw new FolderLocked('This folder is protected and cannot be moved.', false);
+        }
+        if ($this->protectionChecker->isProtected($targetInternalPath)) {
+            throw new FolderLocked('Cannot move to a protected folder path.', false);
         }
         return parent::moveFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
     }

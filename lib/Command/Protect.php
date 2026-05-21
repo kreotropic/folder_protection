@@ -49,11 +49,12 @@ class Protect extends Command {
             $qb = $this->db->getQueryBuilder();
             $qb->insert('folder_protection')
                ->values([
-                   'path' => $qb->createNamedParameter($path),
-                   'user_id' => $qb->createNamedParameter($user),
+                   'path'      => $qb->createNamedParameter($path),
+                   'path_hash' => $qb->createNamedParameter(md5($path)),
+                   'user_id'   => $qb->createNamedParameter($user),
                    'created_by' => $qb->createNamedParameter($user),
                    'created_at' => $qb->createNamedParameter(time()),
-                   'reason' => $qb->createNamedParameter($reason),
+                   'reason'    => $qb->createNamedParameter($reason),
                ]);
             $qb->executeStatement();
 
