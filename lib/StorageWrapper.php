@@ -19,16 +19,41 @@ class StorageWrapper extends Wrapper {
     }
 
     /**
-     * Devolve o path no formato usado na base de dados.
+     * Reconstructs the full user-relative path from the storage-internal path.
      *
-     * O internal path do storage já está no formato correcto:
-     *   'files/normal' → normalizado pelo ProtectionChecker para '/files/normal'
+     * For home storage ($mountPoint = '/ncadmin/'), the internal path is already
+     * in the correct format: 'files/folder' → '/files/folder' in the DB.
      *
-     * NÃO adicionamos o userId aqui porque os paths na DB não incluem o username.
-     * O mountPoint é mantido apenas para contexto (pode ser usado no futuro).
+     * For external storage ($mountPoint = '/ncadmin/files/ext/'), the internal path
+     * is relative to the external storage root ('subfolder'), so we must prepend the
+     * mount-point suffix ('files/ext') → 'files/ext/subfolder' → '/files/ext/subfolder'.
      */
     private function buildCheckPath(string $internalPath): string {
-        return $internalPath;
+        if ($this->mountPoint === null) {
+            return $internalPath;
+        }
+        // Strip the username (first path component) from the mount point:
+        //   /ncadmin/           → ''         (home storage — internal path already correct)
+        //   /ncadmin/files/ext  → /files/ext (external — prepend to internal path)
+        $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($this->mountPoint, '/'));
+
+        if ($mountSuffix === '') {
+            return $internalPath;
+        }
+
+        $suffix = ltrim($mountSuffix, '/');
+        $inner  = ltrim($internalPath, '/');
+
+        // Storage root (empty or '.') maps to the mount point path itself.
+        // Protection of the mount point is handled by the parent (home) storage wrapper
+        // via the full path (e.g. 'files/exttest'). Returning '' here means isProtected('/')
+        // which is never protected, so getPermissions/isDeletable/etc. stay unrestricted
+        // and operations on the storage contents remain free.
+        if ($inner === '' || $inner === '.') {
+            return '';
+        }
+
+        return $suffix . '/' . $inner;
     }
 
     private function sendProtectionNotification(string $path, string $action): void {
@@ -66,8 +91,28 @@ class StorageWrapper extends Wrapper {
     }
 
     public function __call($method, $args) {
-        // Delega silenciosamente métodos desconhecidos para o storage original
         return call_user_func_array([$this->storage, $method], $args);
+    }
+
+    // Explicitly implement trash-control methods to avoid __call forwarding
+    // these to Local (which has no such methods) and crashing with a TypeError.
+    // We propagate down the chain via try-catch so intermediate Wrapper layers
+    // (which forward via __call) are traversed, but the error is silently
+    // swallowed when the bottom of the chain (Local) doesn't implement them.
+    public function disableTrash(): void {
+        try {
+            $this->storage->disableTrash();
+        } catch (\Throwable $e) {
+            // Local storage has no trash concept — ignore silently.
+        }
+    }
+
+    public function enableTrash(): void {
+        try {
+            $this->storage->enableTrash();
+        } catch (\Throwable $e) {
+            // Local storage has no trash concept — ignore silently.
+        }
     }
 
     public function is_dir($path): bool {
