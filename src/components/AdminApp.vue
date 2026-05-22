@@ -9,6 +9,7 @@
         </div>
 
         <!-- Preferências de visualização -->
+        <h3 class="settings-title">{{ t('folder_protection', 'Settings') }}</h3>
         <div class="display-settings">
             <label class="lock-toggle-label">
                 <input type="checkbox" v-model="showLocks" @change="onToggleLocks" />
@@ -26,12 +27,19 @@
         <div v-else-if="folders.length > 0" class="protected-folders-list">
             <h3>{{ t('folder_protection', 'Protected Folders') }}</h3>
             <div v-for="folder in folders" :key="folder.id" class="folder-item">
-                <div class="folder-icon">📁</div>
+                <div class="folder-icon">
+                    <span class="folder-img icon-folder"></span>
+                    <span v-if="folder.mountPoint" class="group-badge" :title="t('folder_protection', 'Group Folder')">👥</span>
+                    <span class="lock-overlay">🔒</span>
+                </div>
                 <div class="folder-details">
                     <div class="folder-path">
                         <template v-if="folder.mountPoint">
                             <strong class="folder-mount">{{ folder.mountPoint }}</strong>
-                            <div class="folder-internal">{{ folder.path }}</div>
+                            <div class="folder-internal">
+                                <span class="internal-label">{{ t('folder_protection', 'Internal ID:') }}</span>
+                                <code class="internal-path">{{ folder.path }}</code>
+                            </div>
                         </template>
                         <template v-else>
                             {{ folder.path }}
@@ -45,11 +53,29 @@
                             | {{ formatDate(folder.created_at) }}
                         </span>
                     </div>
-                    <div v-if="folder.reason" class="folder-reason">
-                        {{ folder.reason }}
+                    <div v-if="editingFolderId === folder.id" class="folder-edit">
+                        <textarea v-model="editingReason"
+                                  rows="2"
+                                  :placeholder="t('folder_protection', 'Why is this folder protected?')"
+                                  class="reason-textarea"></textarea>
+                        <div class="edit-actions">
+                            <button class="button" @click="cancelEdit">
+                                {{ t('folder_protection', 'Cancel') }}
+                            </button>
+                            <button class="button primary" :disabled="savingEdit" @click="saveEdit(folder)">
+                                {{ savingEdit ? t('folder_protection', 'Saving...') : t('folder_protection', 'Save') }}
+                            </button>
+                        </div>
+                    </div>
+                    <div v-else-if="folder.reason" class="folder-reason">
+                        <span class="reason-label">{{ t('folder_protection', 'Reason:') }}</span>{{ folder.reason }}
                     </div>
                 </div>
                 <div class="folder-actions">
+                    <button @click="startEdit(folder)"
+                            class="button icon-rename"
+                            :title="t('folder_protection', 'Edit reason')">
+                    </button>
                     <button @click="removeProtection(folder)"
                             class="button icon-delete"
                             :title="t('folder_protection', 'Remove protection')">
@@ -214,6 +240,22 @@
                 </div>
             </div>
         </div>
+
+        <!-- Confirm dialog -->
+        <div v-if="confirmDialog.show" class="modal-overlay confirm-overlay" @click.self="cancelConfirm">
+            <div class="modal-content confirm-dialog">
+                <h3>{{ confirmDialog.title }}</h3>
+                <p class="confirm-message">{{ confirmDialog.message }}</p>
+                <div class="form-actions">
+                    <button class="button" @click="cancelConfirm">
+                        {{ t('folder_protection', 'Cancel') }}
+                    </button>
+                    <button class="button primary confirm-danger" @click="doConfirm">
+                        {{ t('folder_protection', 'Remove') }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -245,6 +287,14 @@ export default {
             pendingGroupFolder: null,
             pendingReason: '',
             showReasonDialog: false,
+
+            // Confirm dialog
+            confirmDialog: { show: false, title: '', message: '', onConfirm: null },
+
+            // Inline reason edit
+            editingFolderId: null,
+            editingReason: '',
+            savingEdit: false,
 
             // Existence check
             existsChecking: false,
@@ -403,10 +453,15 @@ export default {
             }
         },
 
-        async unprotectGroupFolder(groupFolder) {
-            if (!confirm(this.t('folder_protection', 'Remove protection from "{path}"?', { path: groupFolder.mountPoint }))) {
-                return
-            }
+        unprotectGroupFolder(groupFolder) {
+            this.askConfirm(
+                this.t('folder_protection', 'Remove Protection'),
+                this.t('folder_protection', 'Remove protection from "{name}"?', { name: groupFolder.mountPoint }),
+                () => this.doUnprotectGroupFolder(groupFolder)
+            )
+        },
+
+        async doUnprotectGroupFolder(groupFolder) {
             try {
                 const response = await axios.post(
                     generateUrl('/apps/folder_protection/api/unprotect'),
@@ -452,10 +507,61 @@ export default {
             }
         },
 
-        async removeProtection(folder) {
-            if (!confirm(this.t('folder_protection', 'Remove protection from "{path}"?', { path: folder.path }))) {
-                return
+        startEdit(folder) {
+            this.editingFolderId = folder.id
+            this.editingReason = folder.reason || ''
+        },
+
+        cancelEdit() {
+            this.editingFolderId = null
+            this.editingReason = ''
+        },
+
+        async saveEdit(folder) {
+            this.savingEdit = true
+            try {
+                const response = await axios.post(
+                    generateUrl('/apps/folder_protection/api/update-reason'),
+                    { id: folder.id, reason: this.editingReason || null }
+                )
+                if (response.data.success) {
+                    showSuccess(this.t('folder_protection', 'Reason updated successfully'))
+                    this.cancelEdit()
+                    await this.loadFolders()
+                } else {
+                    showError(response.data.message)
+                }
+            } catch (error) {
+                showError(this.t('folder_protection', 'Failed to update reason'))
+            } finally {
+                this.savingEdit = false
             }
+        },
+
+        askConfirm(title, message, onConfirm) {
+            this.confirmDialog = { show: true, title, message, onConfirm }
+        },
+
+        cancelConfirm() {
+            this.confirmDialog = { show: false, title: '', message: '', onConfirm: null }
+        },
+
+        doConfirm() {
+            const fn = this.confirmDialog.onConfirm
+            this.cancelConfirm()
+            fn && fn()
+        },
+
+        removeProtection(folder) {
+            const name = folder.mountPoint || folder.path
+            this.askConfirm(
+                this.t('folder_protection', 'Remove Protection'),
+                this.t('folder_protection', 'Remove protection from "{name}"?', { name }),
+                () => this.doRemoveProtection(folder)
+            )
+        },
+
+        async doRemoveProtection(folder) {
             try {
                 const response = await axios.post(
                     generateUrl('/apps/folder_protection/api/unprotect'),
@@ -529,8 +635,38 @@ export default {
 }
 
 .folder-icon {
-    font-size: 24px;
-    margin-right: 15px;
+    position: relative;
+    width: 44px;
+    height: 44px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.folder-img {
+    display: block;
+    width: 44px;
+    height: 44px;
+    background-size: 44px 44px;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.group-badge {
+    position: absolute;
+    top: 2px;
+    right: 0;
+    font-size: 13px;
+    line-height: 1;
+    filter: drop-shadow(0 0 2px var(--color-main-background));
+}
+
+.lock-overlay {
+    position: absolute;
+    bottom: 4px;
+    right: 0;
+    font-size: 13px;
+    line-height: 1;
+    filter: drop-shadow(0 0 2px var(--color-main-background));
 }
 
 .folder-details {
@@ -547,9 +683,25 @@ export default {
     font-weight: var(--font-weight-bold);
 }
 .folder-internal {
-    font-size: 0.9em;
-    color: var(--color-text-lighter);
-    word-break: break-all;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.internal-label {
+    font-size: 11px;
+    color: var(--color-text-maxcontrast);
+    white-space: nowrap;
+}
+
+.internal-path {
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--color-text-maxcontrast);
+    background: var(--color-background-dark, rgba(0, 0, 0, 0.08));
+    padding: 1px 5px;
+    border-radius: 3px;
 }
 
 .folder-meta {
@@ -559,8 +711,13 @@ export default {
 
 .folder-reason {
     margin-top: 5px;
-    font-style: italic;
-    color: var(--color-text-lighter);
+    font-size: 13px;
+    color: var(--color-text-maxcontrast);
+}
+
+.reason-label {
+    font-weight: bold;
+    margin-right: 4px;
 }
 
 .folder-actions button {
@@ -812,5 +969,49 @@ export default {
     color: var(--color-warning, #eca700);
     white-space: nowrap;
     cursor: help;
+}
+
+.settings-title {
+    margin-bottom: 8px;
+    margin-top: 0;
+}
+
+.confirm-overlay {
+    z-index: 10001;
+}
+
+.confirm-dialog {
+    max-width: 400px !important;
+}
+
+.confirm-message {
+    color: var(--color-text-maxcontrast);
+    margin-bottom: 4px;
+}
+
+.confirm-danger {
+    background-color: var(--color-error, #e9322d) !important;
+    border-color: var(--color-error, #e9322d) !important;
+    color: #fff !important;
+}
+
+.folder-edit {
+    margin-top: 8px;
+}
+
+.reason-textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    box-sizing: border-box;
+    resize: vertical;
+    font-size: 13px;
+}
+
+.edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
 }
 </style>

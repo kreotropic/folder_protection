@@ -50,7 +50,22 @@
         "Cannot update properties of protected folder": "Cannot update properties of protected folder",
         "Protected by server policy": "Protected by server policy",
         "Protection check failed": "Protection check failed",
-        "Internal server error during protection check.": "Internal server error during protection check."
+        "Internal server error during protection check.": "Internal server error during protection check.",
+        "Show lock icons on protected folders in the file list": "Show lock icons on protected folders in the file list",
+        "Settings": "Settings",
+        "Internal ID:": "Internal ID:",
+        "Reason:": "Reason:",
+        "Remove Protection": "Remove Protection",
+        "Remove protection from \"{name}\"?": "Remove protection from \"{name}\"?",
+        "folder or folder/sub/target": "folder or folder/sub/target",
+        "Folder found": "Folder found",
+        "Folder not found. Create it first or check the path.": "Folder not found. Create it first or check the path.",
+        "This path points to a file, not a folder.": "This path points to a file, not a folder.",
+        "Edit reason": "Edit reason",
+        "Save": "Save",
+        "Saving...": "Saving...",
+        "Reason updated successfully": "Reason updated successfully",
+        "Failed to update reason": "Failed to update reason"
     },
     "plurals": "nplurals=2; plural=(n != 1);"
 }

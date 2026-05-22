@@ -341,6 +341,42 @@ class AdminController extends Controller {
         }
     }
 
+    /**
+     * Update the reason for an existing protection (admin only)
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function updateReason(int $id, ?string $reason = null): JSONResponse {
+        try {
+            $qb = $this->db->getQueryBuilder();
+            $qb->update('folder_protection')
+               ->set('reason', $qb->createNamedParameter($reason))
+               ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
+
+            $affected = $qb->executeStatement();
+
+            if ($affected === 0) {
+                return new JSONResponse([
+                    'success' => false,
+                    'message' => 'Folder protection not found'
+                ], 404);
+            }
+
+            $this->logger->info('Updated reason for folder protection', ['id' => $id]);
+
+            return new JSONResponse([
+                'success' => true,
+                'message' => 'Reason updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Error updating reason', ['exception' => $e->getMessage()]);
+            return new JSONResponse([
+                'success' => false,
+                'message' => 'Error updating reason: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     private function clearCacheInternal(): void {
         $this->protectionChecker->clearCache();
     }
