@@ -10,6 +10,7 @@ When users move 300GB+ folders, Nextcloud servers can crash or become unresponsi
 
 - Block delete, move, and copy operations on protected folders
 - Two-layer protection (WebDAV + Storage layer)
+- External storage support (SMB, S3, local mount, WebDAV, etc.)
 - Distributed cache support (Redis/Memcached) for performance
 - OCC commands for CLI management
 - Web admin interface with Group Folder support
@@ -39,26 +40,36 @@ php occ app:enable folder_protection
 Go to **Settings → Administration → Folder Protection**
 
 ### OCC Commands
+
+Paths are stored **without the username** — use `/files/foldername`, not `/files/username/foldername`.
+
 ```bash
 # List all protected folders
 php occ folder-protection:list
 
-# Protect a folder (path as stored in DB, e.g. /files/ncadmin/important or /__groupfolders/1)
-php occ folder-protection:protect "/files/ncadmin/important" --reason="Critical data"
+# Protect a folder
+php occ folder-protection:protect "/files/important" --reason="Critical data"
+
+# Protect a group folder (use the numeric ID shown in the admin panel)
+php occ folder-protection:protect "/__groupfolders/1" --reason="Shared data"
 
 # Remove protection by ID (use list to find the ID)
 php occ folder-protection:unprotect 1
 
 # Check if a path is protected
-php occ folder-protection:check "/files/ncadmin/important"
+php occ folder-protection:check "/files/important"
+
+# Clear notification rate-limit cache (useful after testing)
+php occ folder-protection:clear-notifications
 ```
 
 ### Group Folders
 If the [Group Folders](https://github.com/nextcloud/groupfolders) app is installed, the admin panel shows a **Group Folders** tab where you can protect any group folder without being a member of the group.
 
-## Known Limitations
+### External Storage
+Folders inside external storage mounts (SMB, S3, local mount, WebDAV, etc.) are fully supported. Protect the mount path as it appears in the user's files, e.g. `/files/myexternal`.
 
-- **Folder name is globally reserved while protection is active.** Because creation is blocked by folder name across the entire server, no user can create a new folder with the same name anywhere until the protection is removed by an administrator. Plan protection accordingly — remove it first if the folder needs to be replaced or renamed.
+## Known Limitations
 
 - **The "Copy" button is hidden in bulk selection whenever a protected folder is included in the selection.** Even if other non-protected folders are also selected, the Copy action will be hidden for the entire selection. This is a UI-level limitation: because copying a protected folder is blocked at the server level anyway, the button is hidden to avoid confusing error messages. To copy non-protected folders, deselect any protected folders first.
 
@@ -79,7 +90,7 @@ Contributions for additional languages are welcome — add a `l10n/<locale>.json
 
 ## Requirements
 
-- Nextcloud 28 or later
+- Nextcloud 28–32
 - PHP 8.1 or later
 - Redis or Memcached recommended (app works without it, using in-process cache)
 
