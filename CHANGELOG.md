@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.0] - 2026-05-22
+
+### Fixed
+- **MySQL/MariaDB installation failure** (issue #9): `CREATE TABLE` failed with error 1071 ("Specified key was too long") on MySQL/MariaDB with `utf8mb4` charset because the `path` column (TEXT) exceeded the 3072-byte InnoDB index limit. Fixed by adding a `path_hash` column (MD5 of the normalised path, 32 chars) and using it as the unique index instead.
+- **Rename-to-protected-path bypass via storage layer** (issue #10): `StorageWrapper::rename()` only checked the source path, allowing a folder to be renamed INTO a protected path. Now also checks the target path and throws `FolderLocked` if the destination is protected.
+- **External storage path mismatch** (issue #11): Protection checks silently failed for external storage (SMB, S3, local mount, etc.) because the storage wrapper received paths relative to the external storage root (e.g. `subfolder`) instead of the full user-relative path (`files/extname/subfolder`). Fixed across `StorageWrapper` and all three DAV plugins by reconstructing the full path from the mount-point suffix.
+- **DBAL compatibility** (issue #12): `fetchAssociative()` call in the upgrade migration used the wrong method on older Nextcloud/Doctrine DBAL versions. Now uses a compatibility wrapper that falls back to `fetch()` when needed.
+
 ## [2.1.1] - 2026-03-10
 
 ### Fixed

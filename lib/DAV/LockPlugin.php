@@ -141,12 +141,23 @@ class LockPlugin extends ServerPlugin {
     }
 
     /**
-     * Extrai o path interno do nó
+     * Extrai o path interno do nó, com suporte a group folders.
      */
     private function getNodePath(\Sabre\DAV\INode $node): string {
         try {
             if (method_exists($node, 'getFileInfo')) {
                 $fileInfo = $node->getFileInfo();
+
+                $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+                if ($folderId !== null) {
+                    $subPath   = $fileInfo->getInternalPath();
+                    $groupPath = '/__groupfolders/' . $folderId;
+                    if (!empty($subPath) && $subPath !== '.') {
+                        $groupPath .= '/' . ltrim($subPath, '/');
+                    }
+                    return $groupPath;
+                }
+
                 $path        = $fileInfo->getInternalPath();
                 $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
                 if ($mountSuffix !== '') {
@@ -165,6 +176,22 @@ class LockPlugin extends ServerPlugin {
         }
 
         return '';
+    }
+
+    /**
+     * Traverses the storage wrapper chain to find a GroupFolder storage with getFolderId().
+     */
+    private function getGroupFolderIdFromStorage($storage): ?int {
+        $curr  = $storage;
+        $depth = 0;
+        while ($curr !== null && $depth < 20) {
+            if (method_exists($curr, 'getFolderId')) {
+                return (int)$curr->getFolderId();
+            }
+            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
+            $depth++;
+        }
+        return null;
     }
 
     /**
