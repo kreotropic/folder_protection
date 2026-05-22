@@ -195,11 +195,22 @@ class LockPlugin extends ServerPlugin {
     }
 
     /**
-     * Extrai e normaliza path do URI.
-     * O $uri vem do Sabre relativo à base URI (ex: "files/ncadmin/Pasta").
-     * O normalizePath() em isProtected() trata de adicionar o "/" inicial.
+     * Extrai o path interno do URI, reutilizando getNodePath() para garantir
+     * que o username é removido e group folders são correctamente resolvidos.
+     * Fallback para urldecode() se o nó não for acessível.
      */
     private function getInternalPath(string $uri): string {
+        try {
+            if ($this->server) {
+                $node = $this->server->tree->getNodeForPath($uri);
+                $path = $this->getNodePath($node);
+                if (!empty($path)) {
+                    return $path;
+                }
+            }
+        } catch (\Exception $e) {
+            // nó não encontrado — fallback abaixo
+        }
         return urldecode($uri);
     }
 

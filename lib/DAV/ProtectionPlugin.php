@@ -341,13 +341,17 @@ class ProtectionPlugin extends ServerPlugin {
             $this->logger->info("FolderProtection DAV: beforeCopy checking src='$src' dest='$dest'");
 
             foreach ($this->buildPathsToCheck($src) as $checkSrc) {
-                if ($this->protectionChecker->isProtected($checkSrc)) {
-                    $info = $this->protectionChecker->getProtectionInfo($checkSrc);
-                    $reason = 'Protected by server policy';
-                    if (is_array($info) && !empty($info['reason'])) {
-                        $reason = (string)$info['reason'];
+                $directlyProtected = $this->protectionChecker->isProtected($checkSrc);
+                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($checkSrc);
+
+                if ($directlyProtected || $hasProtectedChild) {
+                    if ($directlyProtected) {
+                        $info   = $this->protectionChecker->getProtectionInfo($checkSrc);
+                        $reason = (is_array($info) && !empty($info['reason'])) ? (string)$info['reason'] : 'Protected by server policy';
+                    } else {
+                        $reason = $this->l10n->t('Contains protected sub-folders');
                     }
-                    $this->logger->warning("FolderProtection DAV: Blocking copy - source is protected: $checkSrc");
+                    $this->logger->warning("FolderProtection DAV: Blocking copy - source protected or has protected descendants: $checkSrc");
                     $this->setHeaders('copy', $reason);
                     $this->sendProtectionNotification($checkSrc, 'copy');
                     throw new FolderLocked($this->l10n->t("Cannot copy protected folder: %s", [basename($src)]));

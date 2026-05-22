@@ -57,6 +57,10 @@
     </dav>
 
 
+    <notifications>
+        <notifier>OCA\FolderProtection\Notification\Notifier</notifier>
+    </notifications>
+
     <types>
         <filesystem/>
     </types>
