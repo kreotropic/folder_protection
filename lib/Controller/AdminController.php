@@ -64,7 +64,7 @@ class AdminController extends Controller {
             $result = $qb->executeQuery();
             $folders = [];
 
-            while ($row = $result->fetchAssociative()) {
+            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
                 $folders[] = [
                     'id' => (int)$row['id'],
                     'path' => $row['path'],
@@ -165,7 +165,7 @@ class AdminController extends Controller {
                      ->from('folder_protection')
                      ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
             $selectResult = $qbSelect->executeQuery();
-            $row = $selectResult->fetchAssociative();
+            $row = method_exists($selectResult, 'fetchAssociative') ? $selectResult->fetchAssociative() : $selectResult->fetch();
             $selectResult->closeCursor();
 
             $qb = $this->db->getQueryBuilder();
@@ -268,7 +268,7 @@ class AdminController extends Controller {
             $qb->select('folder_id', 'mount_point')->from('group_folders');
             $result = $qb->executeQuery();
             $groupFolders = [];
-            while ($row = $result->fetchAssociative()) {
+            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
                 $groupFolders[(int)$row['folder_id']] = $row['mount_point'];
             }
             $result->closeCursor();
@@ -280,7 +280,7 @@ class AdminController extends Controller {
                 ->where($qb2->expr()->like('path', $qb2->createNamedParameter('/__groupfolders/%')));
             $result2 = $qb2->executeQuery();
             $protected = [];
-            while ($row = $result2->fetchAssociative()) {
+            while ($row = (method_exists($result2, 'fetchAssociative') ? $result2->fetchAssociative() : $result2->fetch())) {
                 if (preg_match('#^/__groupfolders/(\d+)$#', $row['path'], $m)) {
                     $protected[(int)$m[1]] = [
                         'protection_id' => (int)$row['id'],
@@ -299,7 +299,7 @@ class AdminController extends Controller {
                 ->where($qb3->expr()->like('path', $qb3->createNamedParameter('/files/%')));
             $result3 = $qb3->executeQuery();
             $customPathByName = [];
-            while ($row = $result3->fetchAssociative()) {
+            while ($row = (method_exists($result3, 'fetchAssociative') ? $result3->fetchAssociative() : $result3->fetch())) {
                 $basename = basename($row['path']);
                 $customPathByName[$basename] = [
                     'protection_id' => (int)$row['id'],
@@ -406,7 +406,7 @@ class AdminController extends Controller {
             $result = $qb->executeQuery();
             $protections = [];
 
-            while ($row = $result->fetchAssociative()) {
+            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
                 $protections[$row['path']] = [
                     'protected' => true,
                     'reason' => $row['reason'],
@@ -459,7 +459,7 @@ class AdminController extends Controller {
         $qb->select('folder_id', 'mount_point')->from('group_folders');
         $result = $qb->executeQuery();
         $map = [];
-        while ($row = $result->fetchAssociative()) {
+        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
             $map[(int)$row['folder_id']] = $row['mount_point'];
         }
         $result->closeCursor();

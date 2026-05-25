@@ -32,7 +32,7 @@ class ListProtected extends Command {
         $result = $qb->executeQuery();
         $folders = [];
         
-        while ($row = $result->fetchAssociative()) {
+        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
             $folders[] = [
                 $row['id'],
                 $row['path'],
