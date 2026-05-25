@@ -74,7 +74,7 @@ class ProtectionPlugin extends ServerPlugin {
                 return;
             }
 
-            $userSession = \OC::$server->getUserSession();
+            $userSession = \OCP\Server::get(\OCP\IUserSession::class);
             if (!$userSession || !$userSession->isLoggedIn()) {
                 return;
             }
@@ -83,7 +83,7 @@ class ProtectionPlugin extends ServerPlugin {
                 return;
             }
 
-            $manager = \OC::$server->getNotificationManager();
+            $manager = \OCP\Server::get(\OCP\Notification\IManager::class);
             $notification = $manager->createNotification();
 
             $notification->setApp('folder_protection')

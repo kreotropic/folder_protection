@@ -63,7 +63,7 @@ class StorageWrapper extends Wrapper {
                 return;
             }
 
-            $userSession = \OC::$server->getUserSession();
+            $userSession = \OCP\Server::get(\OCP\IUserSession::class);
             if (!$userSession || !$userSession->isLoggedIn()) {
                 return;
             }
@@ -72,7 +72,7 @@ class StorageWrapper extends Wrapper {
                 return;
             }
 
-            $manager = \OC::$server->getNotificationManager();
+            $manager = \OCP\Server::get(\OCP\Notification\IManager::class);
             $notification = $manager->createNotification();
 
             $notification->setApp('folder_protection')
@@ -86,7 +86,7 @@ class StorageWrapper extends Wrapper {
 
             $manager->notify($notification);
         } catch (\Throwable $e) {
-            \OC::$server->get(LoggerInterface::class)->error('FolderProtection: Failed to send notification: ' . $e->getMessage());
+            \OCP\Server::get(LoggerInterface::class)->error('FolderProtection: Failed to send notification: ' . $e->getMessage());
         }
     }
 
@@ -143,12 +143,12 @@ class StorageWrapper extends Wrapper {
 
     public function rename(string $source, string $target): bool {
         if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
-            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
+            \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
             $this->sendProtectionNotification($source, 'move');
             throw new FolderLocked("Moving protected folders is not allowed");
         }
         if ($this->protectionChecker->isProtected($this->buildCheckPath($target))) {
-            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename to protected path: $target");
+            \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename to protected path: $target");
             throw new FolderLocked("Cannot move or rename to a protected folder path");
         }
         return $this->storage->rename($source, $target);

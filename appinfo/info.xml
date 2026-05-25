@@ -5,7 +5,7 @@
     <name>Folder Protection</name>
     <summary>Protect folders from being moved, copied, or deleted</summary>
     <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
-    <version>2.2.0</version>
+    <version>2.3.0</version>
     <licence>agpl</licence>
     <author mail="rsfneg@gmail.com">Ricardo Ferreira</author>
     <namespace>FolderProtection</namespace>
@@ -13,7 +13,7 @@
     
     <dependencies>
         <php min-version="8.1"/>
-        <nextcloud min-version="28" max-version="32"/>
+        <nextcloud min-version="28" max-version="33"/>
     </dependencies>
     <website>https://github.com/kreotropic/folder_protection</website>
     <bugs>https://github.com/kreotropic/folder_protection/issues</bugs>

@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0] - 2026-05-25
+
+### Changed
+- **Nextcloud 33 compatibility**: Replaced all uses of `IResult::fetch()` (removed in NC33) with `fetchAssociative()` across `AdminController`, `ListProtected`, `Unprotect`, `ProtectionChecker`, and the migration class.
+- **Nextcloud 33 compatibility**: `Notifier::prepare()` now throws `\OCP\Notification\UnknownNotificationException` instead of `\InvalidArgumentException` (required since NC30, the old class was removed in NC33).
+- **NC34 future-proofing**: Replaced all `OC::$server->getUserSession()`, `OC::$server->getNotificationManager()`, and `OC::$server->get(LoggerInterface::class)` calls in `StorageWrapper` and `ProtectionPlugin` with `\OCP\Server::get(...)` (the `OC::$server` global is removed in NC34).
+- Removed compat wrappers (`method_exists($result, 'fetchAssociative') ? … : $result->fetch()`) now that `min-version="28"` guarantees `fetchAssociative()` is always available.
+
 ## [2.2.0] - 2026-05-22
 
 ### Fixed

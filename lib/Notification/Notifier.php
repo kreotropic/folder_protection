@@ -24,7 +24,7 @@ class Notifier implements INotifier {
 
     public function prepare(INotification $notification, string $languageCode): INotification {
         if ($notification->getApp() !== 'folder_protection') {
-            throw new \InvalidArgumentException();
+            throw new \OCP\Notification\UnknownNotificationException();
         }
 
         $l = $this->factory->get('folder_protection', $languageCode);

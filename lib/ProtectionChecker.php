@@ -110,7 +110,7 @@ class ProtectionChecker {
 
         $result = $qb->executeQuery();
         $folders = [];
-        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+        while ($row = $result->fetchAssociative()) {
             $folders[] = $row['path'];
         }
         $result->closeCursor();
@@ -134,7 +134,7 @@ class ProtectionChecker {
            ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter(md5($path))));
 
         $result = $qb->executeQuery();
-        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $row = $result->fetchAssociative();
         $result->closeCursor();
 
         return $row !== false && $row !== null;
@@ -180,9 +180,9 @@ class ProtectionChecker {
             ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter(md5($path))));
         
         $result = $qb->executeQuery();
-        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $row = $result->fetchAssociative();
         $result->closeCursor();
-        
+
         // Cache result
         if ($this->cache !== null) {
             $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
