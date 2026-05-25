@@ -269,9 +269,9 @@ export default {
     computed: {
         matchingGroupFolder() {
             if (!this.groupFoldersAvailable || !this.newFolder.folderName) return null
-            // Only the first path segment matters for group folder matching
-            const firstSegment = this.newFolder.folderName.trim().replace(/^\/+/, '').split('/')[0]
-            return this.groupFolders.find(gf => gf.mountPoint === firstSegment) || null
+            // Match only if the full path IS a group folder root, not a subfolder within one
+            const folderName = this.newFolder.folderName.trim().replace(/^\/+|\/+$/g, '')
+            return this.groupFolders.find(gf => gf.mountPoint === folderName) || null
         },
         canSubmit() {
             if (this.submitting) return false

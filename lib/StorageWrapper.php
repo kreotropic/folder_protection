@@ -134,20 +134,30 @@ class StorageWrapper extends Wrapper {
     }
 
     public function copy($source, $target): bool {
-        if ($this->protectionChecker->isProtectedOrParentProtected($this->buildCheckPath($source))) {
-            $this->sendProtectionNotification($source, 'copy');
+        $srcPath = $this->buildCheckPath($source);
+        $tgtPath = $this->buildCheckPath($target);
+        // Block only when copying OUT of a protected scope; copying within the same
+        // protected folder (e.g. sync temp-file pattern) must remain allowed.
+        if ($this->protectionChecker->isProtectedOrParentProtected($srcPath)
+            && !$this->protectionChecker->isProtectedOrParentProtected($tgtPath)) {
+            $this->sendProtectionNotification($srcPath, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
         return $this->storage->copy($source, $target);
     }
 
     public function rename(string $source, string $target): bool {
-        if ($this->protectionChecker->isProtectedOrParentProtected($this->buildCheckPath($source))) {
-            \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
-            $this->sendProtectionNotification($source, 'move');
+        $srcPath = $this->buildCheckPath($source);
+        $tgtPath = $this->buildCheckPath($target);
+        // Block only when moving OUT of a protected scope; renaming within the same
+        // protected folder (e.g. write-to-temp-then-rename sync pattern) must stay allowed.
+        if ($this->protectionChecker->isProtectedOrParentProtected($srcPath)
+            && !$this->protectionChecker->isProtectedOrParentProtected($tgtPath)) {
+            \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move out of protected folder: $source → $target");
+            $this->sendProtectionNotification($srcPath, 'move');
             throw new FolderLocked("Moving protected folders is not allowed");
         }
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($target))) {
+        if ($this->protectionChecker->isProtected($tgtPath)) {
             \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename to protected path: $target");
             throw new FolderLocked("Cannot move or rename to a protected folder path");
         }
@@ -166,15 +176,6 @@ class StorageWrapper extends Wrapper {
         if (!empty($sourceInternalPath) && $this->protectionChecker->isProtectedOrParentProtected($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
-        }
-
-        if (method_exists($sourceStorage, 'getFolderId')) {
-            $folderId = $sourceStorage->getFolderId();
-            $groupFolderPath = "/__groupfolders/$folderId";
-            if ($this->protectionChecker->isProtectedOrParentProtected($groupFolderPath)) {
-                $this->sendProtectionNotification($groupFolderPath, 'copy');
-                throw new FolderLocked('This group folder is protected and cannot be copied.', false);
-            }
         }
 
         if ($this->protectionChecker->isProtected($targetInternalPath)) {

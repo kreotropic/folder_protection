@@ -53,22 +53,30 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      * Handler para PROPFIND - adiciona propriedades customizadas
      */
     public function propFind(PropFind $propFind, INode $node): void {
-        $path = $this->getNodePath($node, $propFind->getPath());
-
         // Só aplicar a ficheiros e diretórios do Nextcloud
-        if (!($node instanceof \OCA\DAV\Connector\Sabre\Directory) && 
+        if (!($node instanceof \OCA\DAV\Connector\Sabre\Directory) &&
             !($node instanceof \OCA\DAV\Connector\Sabre\File)) {
             return;
         }
 
-        // Se não conseguimos determinar o path, skip
-        if (empty($path)) {
+        $candidates = $this->getNodePathCandidates($node);
+        if (empty($candidates)) {
             return;
         }
 
-        // Verificar proteção uma vez
-        $isProtected = $this->protectionChecker->isProtected($path);
-        $protectionInfo = $isProtected ? $this->protectionChecker->getProtectionInfo($path) : null;
+        // Check protection against all path format candidates
+        $isProtected    = false;
+        $protectedPath  = '';
+        $protectionInfo = null;
+        foreach ($candidates as $candidate) {
+            if ($this->protectionChecker->isProtected($candidate)) {
+                $isProtected    = true;
+                $protectedPath  = $candidate;
+                $protectionInfo = $this->protectionChecker->getProtectionInfo($candidate);
+                break;
+            }
+        }
+        $path = $candidates[0]; // primary path for logging
 
         $this->logger->debug("FolderProtection PROPFIND: path='$path', protected=" . ($isProtected ? 'yes' : 'no'));
 
@@ -129,50 +137,55 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      * @param string $uri   Path of the node relative to the DAV tree root (e.g. 'files/ncadmin/folder').
      *                      Provided by PropFind::getPath() — already in the correct format for regular nodes.
      */
-    private function getNodePath(INode $node, string $uri = ''): string {
+    /**
+     * Returns all path candidates for a node.
+     * Checks both mount-point format ('/files/team/sub') and group folder ID format
+     * ('/__groupfolders/1/sub') to match any DB storage format.
+     */
+    private function getNodePathCandidates(INode $node): array {
         try {
-            if (method_exists($node, 'getFileInfo')) {
-                $fileInfo = $node->getFileInfo();
-
-                // Detect group folder: traverse storage wrapper chain
-                $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
-                if ($folderId !== null) {
-                    $subPath = $fileInfo->getInternalPath();
-                    $groupPath = '/__groupfolders/' . $folderId;
-                    if (!empty($subPath) && $subPath !== '.') {
-                        $groupPath .= '/' . ltrim($subPath, '/');
-                    }
-                    return $groupPath;
-                }
-
-                // Reconstruct the full user-relative path.
-                // For home storage the internal path is already in 'files/folder' format.
-                // For external storage prepend the mount-point suffix (stripped of username).
-                $path        = $fileInfo->getInternalPath();
-                $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
-                if ($mountSuffix !== '') {
-                    $suffix = ltrim($mountSuffix, '/');
-                    $inner  = ltrim($path, '/');
-                    $path   = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
-                } elseif (strpos($path, 'files/') !== 0) {
-                    $path = 'files/' . ltrim($path, '/');
-                }
-                return '/' . $path;
+            if (!method_exists($node, 'getFileInfo')) {
+                return [];
             }
+            $fileInfo     = $node->getFileInfo();
+            $internalPath = $fileInfo->getInternalPath();
+            $candidates   = [];
+
+            // Primary: mount-point format — matches file-picker stored paths
+            $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
+            if ($mountSuffix !== '') {
+                $suffix = ltrim($mountSuffix, '/');
+                $inner  = ltrim($internalPath, '/');
+                $candidates[] = '/' . (($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner);
+            } else {
+                $base = (strpos($internalPath, 'files/') !== 0)
+                    ? 'files/' . ltrim($internalPath, '/')
+                    : $internalPath;
+                $candidates[] = '/' . $base;
+            }
+
+            // Secondary: group folder ID format — matches admin-section root entries
+            $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+            if ($folderId !== null) {
+                $inner  = ltrim($internalPath, '/');
+                $idPath = '/__groupfolders/' . $folderId;
+                if ($inner !== '' && $inner !== '.') {
+                    $idPath .= '/' . $inner;
+                }
+                $candidates[] = $idPath;
+            }
+
+            return $candidates;
         } catch (\Exception $e) {
             $this->logger->error('FolderProtection: Error getting node path', [
                 'exception' => $e->getMessage()
             ]);
+            return [];
         }
-
-        return '';
     }
 
-    /**
-     * Traverse the storage wrapper chain to find a GroupFolder storage with getFolderId().
-     */
     private function getGroupFolderIdFromStorage($storage): ?int {
-        $curr = $storage;
+        $curr  = $storage;
         $depth = 0;
         while ($curr !== null && $depth < 20) {
             if (method_exists($curr, 'getFolderId')) {

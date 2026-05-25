@@ -58,124 +58,113 @@ class LockPlugin extends ServerPlugin {
      */
     public function beforeLock(string $uri, LockInfo $lock): void {
         try {
-            $path = $this->getInternalPath($uri);
-            
-            // Se a pasta protegida já tem um lock automático, rejeita qualquer lock novo
-            if ($this->protectionChecker->isProtected($path)) {
-                $info = $this->protectionChecker->getProtectionInfo($path);
-                $reason = $info['reason'] ?? 'Protected by server policy';
-                
-                $this->logger->warning("FolderProtection Lock: Blocking LOCK attempt on protected: $path");
-                $this->setResponseHeaders('lock', $reason);
-                
-                // Lança exceção para bloquear a operação (SabreDAV standard)
-                throw new \Sabre\DAV\Exception\Forbidden(
-                    sprintf('🛡️ FOLDER PROTECTED: %s', $reason)
-                );
+            foreach ($this->getInternalPathCandidates($uri) as $path) {
+                if ($this->protectionChecker->isProtected($path)) {
+                    $info   = $this->protectionChecker->getProtectionInfo($path);
+                    $reason = $info['reason'] ?? 'Protected by server policy';
+                    $this->logger->warning("FolderProtection Lock: Blocking LOCK attempt on protected: $path");
+                    $this->setResponseHeaders('lock', $reason);
+                    throw new \Sabre\DAV\Exception\Forbidden(sprintf('🛡️ FOLDER PROTECTED: %s', $reason));
+                }
             }
         } catch (\Sabre\DAV\Exception $e) {
-            // Re-lança exceções DAV
             throw $e;
         } catch (\Throwable $e) {
-            $this->logger->error('FolderProtection Lock: Error in beforeLock', [
-                'error' => $e->getMessage()
-            ]);
+            $this->logger->error('FolderProtection Lock: Error in beforeLock', ['error' => $e->getMessage()]);
             throw new \Sabre\DAV\Exception\InternalServerError('Protection check failed');
         }
     }
 
-    /**
-     * Intercepta tentativas de UNLOCK - bloqueia unlock em pastas protegidas
-     */
     public function beforeUnlock(string $uri, LockInfo $lock): void {
         try {
-            $path = $this->getInternalPath($uri);
-            
-            if ($this->protectionChecker->isProtected($path)) {
-                // Bloqueia tentativas de fazer unlock numa pasta protegida
-                $this->logger->warning("FolderProtection Lock: Blocking UNLOCK attempt on protected: $path");
-                
-                throw new \Sabre\DAV\Exception\Forbidden(
-                    'Cannot unlock protected folders. They are locked by the system.'
-                );
+            foreach ($this->getInternalPathCandidates($uri) as $path) {
+                if ($this->protectionChecker->isProtected($path)) {
+                    $this->logger->warning("FolderProtection Lock: Blocking UNLOCK attempt on protected: $path");
+                    throw new \Sabre\DAV\Exception\Forbidden('Cannot unlock protected folders. They are locked by the system.');
+                }
             }
         } catch (\Sabre\DAV\Exception $e) {
             throw $e;
         } catch (\Throwable $e) {
-            $this->logger->error('FolderProtection Lock: Error in beforeUnlock', [
-                'error' => $e->getMessage()
-            ]);
+            $this->logger->error('FolderProtection Lock: Error in beforeUnlock', ['error' => $e->getMessage()]);
             throw new \Sabre\DAV\Exception\InternalServerError('Protection check failed');
         }
     }
 
-    /**
-     * Handler para PROPFIND - Reporta status de proteção em pastas
-     * Clientes WebDAV verificam propriedades antes de operações
-     */
     public function propFind(PropFind $propFind, \Sabre\DAV\INode $node): void {
         try {
-            $path = $this->getNodePath($node);
-            if (empty($path)) {
+            $candidates = $this->getNodePathCandidates($node);
+            if (empty($candidates)) {
                 return;
             }
 
-            // Verifica se está protegida
-            if (!$this->protectionChecker->isProtected($path)) {
+            $protectedPath = '';
+            $info          = null;
+            foreach ($candidates as $path) {
+                if ($this->protectionChecker->isProtected($path)) {
+                    $protectedPath = $path;
+                    $info          = $this->protectionChecker->getProtectionInfo($path);
+                    break;
+                }
+            }
+            if ($protectedPath === '') {
                 return;
             }
 
-            $info = $this->protectionChecker->getProtectionInfo($path);
             $reason = $info['reason'] ?? 'Protected by server policy';
-
-            // Reporta propriedade customizada que indica proteção
             $propFind->handle('{http://nextcloud.org/ns}is-locked', 'true');
             $propFind->handle('{http://nextcloud.org/ns}lock-reason', $reason);
-
-            $this->logger->debug("FolderProtection Lock: Reported lock status for: $path");
+            $this->logger->debug("FolderProtection Lock: Reported lock status for: $protectedPath");
         } catch (\Throwable $e) {
-            $this->logger->error('FolderProtection Lock: Error in propFind', [
-                'error' => $e->getMessage()
-            ]);
+            $this->logger->error('FolderProtection Lock: Error in propFind', ['error' => $e->getMessage()]);
         }
     }
 
     /**
-     * Extrai o path interno do nó, com suporte a group folders.
+     * Returns all path candidates for a node.
+     * Checks both mount-point format ('/files/team/sub') and group folder ID format
+     * ('/__groupfolders/1/sub') to match any DB storage format.
      */
-    private function getNodePath(\Sabre\DAV\INode $node): string {
+    private function getNodePathCandidates(\Sabre\DAV\INode $node): array {
         try {
-            if (method_exists($node, 'getFileInfo')) {
-                $fileInfo = $node->getFileInfo();
-
-                $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
-                if ($folderId !== null) {
-                    $subPath   = $fileInfo->getInternalPath();
-                    $groupPath = '/__groupfolders/' . $folderId;
-                    if (!empty($subPath) && $subPath !== '.') {
-                        $groupPath .= '/' . ltrim($subPath, '/');
-                    }
-                    return $groupPath;
-                }
-
-                $path        = $fileInfo->getInternalPath();
-                $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
-                if ($mountSuffix !== '') {
-                    $suffix = ltrim($mountSuffix, '/');
-                    $inner  = ltrim($path, '/');
-                    $path   = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
-                } elseif (strpos($path, 'files/') !== 0) {
-                    $path = 'files/' . ltrim($path, '/');
-                }
-                return '/' . $path;
+            if (!method_exists($node, 'getFileInfo')) {
+                return [];
             }
+            $fileInfo     = $node->getFileInfo();
+            $internalPath = $fileInfo->getInternalPath();
+            $candidates   = [];
+
+            // Primary: mount-point format — matches file-picker stored paths
+            $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
+            if ($mountSuffix !== '') {
+                $suffix = ltrim($mountSuffix, '/');
+                $inner  = ltrim($internalPath, '/');
+                $candidates[] = '/' . (($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner);
+            } else {
+                $base = (strpos($internalPath, 'files/') !== 0)
+                    ? 'files/' . ltrim($internalPath, '/')
+                    : $internalPath;
+                $candidates[] = '/' . $base;
+            }
+
+            // Secondary: group folder ID format — matches admin-section root entries
+            $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+            if ($folderId !== null) {
+                $inner  = ltrim($internalPath, '/');
+                $idPath = '/__groupfolders/' . $folderId;
+                if ($inner !== '' && $inner !== '.') {
+                    $idPath .= '/' . $inner;
+                }
+                $candidates[] = $idPath;
+            }
+
+            return $candidates;
         } catch (\Exception $e) {
             $this->logger->error('FolderProtection Lock: Error getting node path', [
                 'error' => $e->getMessage()
             ]);
+            return [];
         }
-
-        return '';
     }
 
     /**
@@ -195,23 +184,21 @@ class LockPlugin extends ServerPlugin {
     }
 
     /**
-     * Extrai o path interno do URI, reutilizando getNodePath() para garantir
-     * que o username é removido e group folders são correctamente resolvidos.
-     * Fallback para urldecode() se o nó não for acessível.
+     * Resolves a URI to all path candidates (both formats), with fallback.
      */
-    private function getInternalPath(string $uri): string {
+    private function getInternalPathCandidates(string $uri): array {
         try {
             if ($this->server) {
                 $node = $this->server->tree->getNodeForPath($uri);
-                $path = $this->getNodePath($node);
-                if (!empty($path)) {
-                    return $path;
+                $candidates = $this->getNodePathCandidates($node);
+                if (!empty($candidates)) {
+                    return $candidates;
                 }
             }
         } catch (\Exception $e) {
-            // nó não encontrado — fallback abaixo
+            // node not found — fallback below
         }
-        return urldecode($uri);
+        return [urldecode($uri)];
     }
 
     /**
