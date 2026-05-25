@@ -134,7 +134,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function copy($source, $target): bool {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
+        if ($this->protectionChecker->isProtectedOrParentProtected($this->buildCheckPath($source))) {
             $this->sendProtectionNotification($source, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
@@ -142,7 +142,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function rename(string $source, string $target): bool {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
+        if ($this->protectionChecker->isProtectedOrParentProtected($this->buildCheckPath($source))) {
             \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
             $this->sendProtectionNotification($source, 'move');
             throw new FolderLocked("Moving protected folders is not allowed");
@@ -163,7 +163,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
-        if (!empty($sourceInternalPath) && $this->protectionChecker->isProtected($sourceInternalPath)) {
+        if (!empty($sourceInternalPath) && $this->protectionChecker->isProtectedOrParentProtected($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
@@ -185,7 +185,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function moveFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
-        if ($this->protectionChecker->isProtected($sourceInternalPath)) {
+        if ($this->protectionChecker->isProtectedOrParentProtected($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'move');
             throw new FolderLocked('This folder is protected and cannot be moved.', false);
         }

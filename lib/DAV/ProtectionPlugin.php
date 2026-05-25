@@ -275,9 +275,10 @@ class ProtectionPlugin extends ServerPlugin {
 
             foreach ($pathsToCheck as $candidate) {
                 $directlyProtected = $this->protectionChecker->isProtected($candidate);
-                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
+                $insideProtected   = !$directlyProtected && $this->protectionChecker->isProtectedOrParentProtected($candidate);
+                $hasProtectedChild = !$directlyProtected && !$insideProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
 
-                if ($directlyProtected || $hasProtectedChild) {
+                if ($directlyProtected || $insideProtected || $hasProtectedChild) {
                     $this->touchProtectedNode($sourcePath);
 
                     $reason = $this->l10n->t('Protected by server policy');
@@ -286,7 +287,7 @@ class ProtectionPlugin extends ServerPlugin {
                         if (is_array($info) && !empty($info['reason'])) {
                             $reason = (string)$info['reason'];
                         }
-                    } else {
+                    } elseif ($hasProtectedChild) {
                         $reason = $this->l10n->t('Contains protected sub-folders');
                     }
 
@@ -342,16 +343,19 @@ class ProtectionPlugin extends ServerPlugin {
 
             foreach ($this->buildPathsToCheck($src) as $checkSrc) {
                 $directlyProtected = $this->protectionChecker->isProtected($checkSrc);
-                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($checkSrc);
+                $insideProtected   = !$directlyProtected && $this->protectionChecker->isProtectedOrParentProtected($checkSrc);
+                $hasProtectedChild = !$directlyProtected && !$insideProtected && $this->protectionChecker->hasProtectedDescendant($checkSrc);
 
-                if ($directlyProtected || $hasProtectedChild) {
+                if ($directlyProtected || $insideProtected || $hasProtectedChild) {
                     if ($directlyProtected) {
                         $info   = $this->protectionChecker->getProtectionInfo($checkSrc);
                         $reason = (is_array($info) && !empty($info['reason'])) ? (string)$info['reason'] : 'Protected by server policy';
-                    } else {
+                    } elseif ($hasProtectedChild) {
                         $reason = $this->l10n->t('Contains protected sub-folders');
+                    } else {
+                        $reason = $this->l10n->t('Protected by server policy');
                     }
-                    $this->logger->warning("FolderProtection DAV: Blocking copy - source protected or has protected descendants: $checkSrc");
+                    $this->logger->warning("FolderProtection DAV: Blocking copy - source protected or inside/has protected folder: $checkSrc");
                     $this->setHeaders('copy', $reason);
                     $this->sendProtectionNotification($checkSrc, 'copy');
                     throw new FolderLocked($this->l10n->t("Cannot copy protected folder: %s", [basename($src)]));
