@@ -9,5 +9,6 @@ return [
         ['name' => 'admin#getFolderStatuses', 'url' => '/api/status', 'verb' => 'GET'],
         ['name' => 'admin#checkExists', 'url' => '/api/exists', 'verb' => 'GET'],
         ['name' => 'admin#listGroupFolders', 'url' => '/api/groupfolders', 'verb' => 'GET'],
+        ['name' => 'admin#updateReason', 'url' => '/api/update-reason', 'verb' => 'POST'],
     ]
 ];

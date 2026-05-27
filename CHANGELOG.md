@@ -8,6 +8,19 @@
 - **NC34 future-proofing**: Replaced all `OC::$server->getUserSession()`, `OC::$server->getNotificationManager()`, and `OC::$server->get(LoggerInterface::class)` calls in `StorageWrapper` and `ProtectionPlugin` with `\OCP\Server::get(...)` (the `OC::$server` global is removed in NC34).
 - Removed compat wrappers (`method_exists($result, 'fetchAssociative') ? … : $result->fetch()`) now that `min-version="28"` guarantees `fetchAssociative()` is always available.
 
+## [2.2.1] - 2026-05-22
+
+### Fixed
+- Notifier registration corrected to prevent startup warnings
+- Lock path resolution fixed for edge cases in LockPlugin
+- COPY operation now correctly blocks descendants of protected folders, not just the root
+- Removed dead code paths in protection check flow
+
+### Changed
+- Admin UI: added edit button to update the protection reason inline
+- Admin UI: lock icon overlay on folder entries, styled confirmation dialog (replaces browser native confirm), "Configurações" section label, internal ID shown as monospace chip, reason displayed with label
+- Translations: added missing strings for en/pt_PT (lock icon toggle, folder existence check, edit reason)
+
 ## [2.2.0] - 2026-05-22
 
 ### Fixed

@@ -50,7 +50,22 @@
         "Cannot update properties of protected folder": "Não é possível alterar as propriedades de uma pasta protegida",
         "Protected by server policy": "Protegida pela política do servidor",
         "Protection check failed": "Verificação de proteção falhou",
-        "Internal server error during protection check.": "Erro interno do servidor durante a verificação de proteção."
+        "Internal server error during protection check.": "Erro interno do servidor durante a verificação de proteção.",
+        "Show lock icons on protected folders in the file list": "Mostrar ícones de cadeado nas pastas protegidas na lista de ficheiros",
+        "Settings": "Configurações",
+        "Internal ID:": "ID interno:",
+        "Reason:": "Motivo:",
+        "Remove Protection": "Remover Proteção",
+        "Remove protection from \"{name}\"?": "Remover proteção de \"{name}\"?",
+        "folder or folder/sub/target": "pasta ou pasta/sub/destino",
+        "Folder found": "Pasta encontrada",
+        "Folder not found. Create it first or check the path.": "Pasta não encontrada. Crie-a primeiro ou verifique o caminho.",
+        "This path points to a file, not a folder.": "Este caminho aponta para um ficheiro, não uma pasta.",
+        "Edit reason": "Editar motivo",
+        "Save": "Guardar",
+        "Saving...": "A guardar...",
+        "Reason updated successfully": "Motivo atualizado com sucesso",
+        "Failed to update reason": "Falha ao atualizar o motivo"
     },
     "plurals": "nplurals=2; plural=(n != 1);"
 }
