@@ -10,5 +10,6 @@ return [
         ['name' => 'admin#checkExists', 'url' => '/api/exists', 'verb' => 'GET'],
         ['name' => 'admin#listGroupFolders', 'url' => '/api/groupfolders', 'verb' => 'GET'],
         ['name' => 'admin#updateReason', 'url' => '/api/update-reason', 'verb' => 'POST'],
+        ['name' => 'widget#getData', 'url' => '/api/widget/data', 'verb' => 'GET'],
     ]
 ];

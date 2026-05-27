@@ -2,10 +2,13 @@ const path = require('path')
 const { VueLoaderPlugin } = require('vue-loader')
 
 module.exports = {
-    entry: './src/admin.js',
+    entry: {
+        admin: './src/admin.js',
+        dashboard: './src/dashboard.js',
+    },
     output: {
         path: path.resolve(__dirname, 'js'),
-        filename: 'admin.js'
+        filename: '[name].js',
     },
     devtool: 'source-map', // ← IMPORTANTE: usar source-map em vez de eval
     module: {

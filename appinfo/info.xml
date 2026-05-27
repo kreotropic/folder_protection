@@ -65,6 +65,10 @@
         <filesystem/>
     </types>
 
+    <dashboard>
+        <widget>OCA\FolderProtection\Dashboard\ProtectedFoldersWidget</widget>
+    </dashboard>
+
 
 
 

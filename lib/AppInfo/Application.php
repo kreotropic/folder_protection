@@ -19,6 +19,8 @@ use OCP\Util;
 use OC;
 use Psr\Log\LoggerInterface;
 use OCA\DAV\Events\SabrePluginAuthInitEvent;
+use OCA\FolderProtection\Dashboard\ProtectedFoldersWidget;
+use OCA\FolderProtection\Dashboard\WidgetDataService;
 
 /**
  * Application
@@ -156,6 +158,17 @@ class Application extends App implements IBootstrap {
                 $c->get(\OCP\L10N\IFactory::class)
             );
         });
+
+        // Regista o WidgetDataService
+        $context->registerService(WidgetDataService::class, function ($c) {
+            return new WidgetDataService(
+                $c->get(\OCP\IDBConnection::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o widget do Dashboard
+        $context->registerDashboardWidget(ProtectedFoldersWidget::class);
 
         // Regista o hook que irá adicionar o StorageWrapper
         Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addStorageWrapper');
