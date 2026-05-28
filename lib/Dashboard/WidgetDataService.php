@@ -29,7 +29,7 @@ class WidgetDataService {
     public function getProtectedFolders(int $limit = 10): array {
         // 1. Buscar pastas protegidas
         $qb = $this->db->getQueryBuilder();
-        $qb->select('id', 'path', 'file_id', 'reason', 'created_by', 'created_at')
+        $qb->select('id', 'path', 'file_id', 'user_id', 'reason', 'created_by', 'created_at')
            ->from('folder_protection')
            ->orderBy('created_at', 'DESC')
            ->setMaxResults($limit);
@@ -46,6 +46,7 @@ class WidgetDataService {
         foreach ($rows as $row) {
             $path     = (string) $row['path'];
             $fileId   = $row['file_id'] !== null ? (int) $row['file_id'] : null;
+            $userId   = $row['user_id'] ?: null;
             $isGroup  = str_starts_with($path, '/__groupfolders/');
             $groupId  = null;
 
@@ -59,7 +60,7 @@ class WidgetDataService {
                 $size        = $this->getSizeByFileId($fileId);
                 $displayName = $this->getDisplayName($path);
             } else {
-                $size        = -1;
+                $size        = $this->getSizeByPath($path, $userId);
                 $displayName = $this->getDisplayName($path);
             }
 
@@ -156,6 +157,64 @@ class WidgetDataService {
             return $row ? (string) $row['mount_point'] : null;
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * Obtém o tamanho de uma pasta regular via user_id + path interno.
+     * Usado quando file_id não está guardado na DB (protect() via UI).
+     *
+     * O path guardado na DB tem formato /files/{subfolder} (sem username).
+     * O path interno no filecache é files/{subfolder}.
+     * O storage do utilizador está em oc_storages como home::{user} ou object::user:{user}.
+     */
+    private function getSizeByPath(string $path, ?string $userId): int {
+        if ($userId === null || !str_starts_with($path, '/files/')) {
+            return -1;
+        }
+
+        try {
+            $internalPath = ltrim($path, '/'); // /files/Template → files/Template
+
+            // Obter o numeric_id do storage do utilizador
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('numeric_id')
+               ->from('storages')
+               ->where($qb->expr()->orX(
+                   $qb->expr()->eq('id', $qb->createNamedParameter('home::' . $userId)),
+                   $qb->expr()->eq('id', $qb->createNamedParameter('object::user:' . $userId))
+               ))
+               ->setMaxResults(1);
+
+            $result = $qb->executeQuery();
+            $row    = $result->fetchAssociative();
+            $result->closeCursor();
+
+            if (!$row) {
+                return -1;
+            }
+            $storageId = (int) $row['numeric_id'];
+
+            // Obter o tamanho do filecache
+            $qb2 = $this->db->getQueryBuilder();
+            $qb2->select('size')
+                ->from('filecache')
+                ->where($qb2->expr()->eq('storage', $qb2->createNamedParameter($storageId)))
+                ->andWhere($qb2->expr()->eq('path', $qb2->createNamedParameter($internalPath)))
+                ->setMaxResults(1);
+
+            $result2 = $qb2->executeQuery();
+            $row2    = $result2->fetchAssociative();
+            $result2->closeCursor();
+
+            return $row2 ? (int) $row2['size'] : -1;
+        } catch (\Throwable $e) {
+            $this->logger->warning('FolderProtection widget: failed to get size by path', [
+                'path'      => $path,
+                'user_id'   => $userId,
+                'exception' => $e->getMessage(),
+            ]);
+            return -1;
         }
     }
 

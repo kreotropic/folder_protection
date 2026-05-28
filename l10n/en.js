@@ -66,6 +66,8 @@ OC.L10N.register(
     "Save" : "Save",
     "Saving..." : "Saving...",
     "Reason updated successfully" : "Reason updated successfully",
-    "Failed to update reason" : "Failed to update reason"
+    "Failed to update reason" : "Failed to update reason",
+    "Protected by {user}" : "Protected by {user}",
+    "Manage protections" : "Manage protections"
 },
 "nplurals=2; plural=(n != 1);");

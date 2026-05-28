@@ -12,6 +12,9 @@
  *   - processRow only touches DOM when state actually changes
  *   - currentDir computed once per cycle, not per row
  *   - Synchronous processing (safe: virtual scroll = ~30-100 DOM rows max)
+ * v2.3.1 - Hide delete action in context menu for protected folders
+ *   - Extend hideCopyInMenu() → hideBlockedActionsInMenu() with delete selectors
+ *   - Add CSS to hide inline delete button on protected rows
  */
 
 (function() {
@@ -163,6 +166,11 @@
                     display: none !important;
                 }
 
+                .files-list__row.${this.config.protectedClass} [data-cy-files-list-row-action="delete"],
+                .files-list__row.${this.config.protectedClass} [data-action="delete"] {
+                    display: none !important;
+                }
+
             `;
 
             const styleEl = document.createElement('style');
@@ -305,7 +313,8 @@
                             : node.querySelector('[data-cy-files-action-menu], [role="menu"]');
 
                         if (menu) {
-                            this.hideCopyInMenu(menu);
+                            // Delay para o Vue renderizar os <li> antes de os remover
+                            setTimeout(() => this.hideBlockedActionsInMenu(menu), 50);
                         }
                     }
                 }
@@ -314,30 +323,41 @@
             bodyObserver.observe(document.body, { childList: true, subtree: true });
         },
 
-        hideCopyInMenu(menu) {
+        hideBlockedActionsInMenu(menu) {
             const activeRow = document.querySelector(
                 `.files-list__row.${this.config.protectedClass}:hover, ` +
-                `.files-list__row.${this.config.protectedClass}[data-cy-files-list-row-selected="true"]`
+                `.files-list__row.${this.config.protectedClass}[data-cy-files-list-row-selected="true"], ` +
+                `.files-list__row.${this.config.protectedClass}[aria-selected="true"], ` +
+                `.files-list__row.${this.config.protectedClass}:has(input[type="checkbox"]:checked)`
             );
 
             if (!activeRow) return;
 
             const selectors = [
+                // Copy
                 '[data-cy-files-list-row-action="copy"]',
                 '[data-action="copy"]',
                 'button[aria-label*="Copy"], button[aria-label*="Copiar"]',
                 'li:has(button[aria-label*="Copy"]), li:has(button[aria-label*="Copiar"])',
+                // Delete
+                '[data-cy-files-list-row-action="delete"]',
+                '[data-action="delete"]',
+                'button[aria-label*="Delete"], button[aria-label*="Apagar"]',
+                'li:has(button[aria-label*="Delete"]), li:has(button[aria-label*="Apagar"])',
             ];
 
             for (const sel of selectors) {
                 try {
                     menu.querySelectorAll(sel).forEach(el => {
                         el.closest('li') ? el.closest('li').remove() : el.remove();
-                        this.log('[FolderProtection] Removed copy action from menu');
+                        this.log('[FolderProtection] Removed blocked action from menu:', sel);
                     });
                 } catch (_) { /* :has() may not be supported */ }
             }
         },
+
+        // Alias para compatibilidade com código existente
+        hideCopyInMenu(menu) { this.hideBlockedActionsInMenu(menu); },
 
         /**
          * Process a single row: always clean and re-evaluate.

@@ -66,6 +66,8 @@ OC.L10N.register(
     "Save" : "Guardar",
     "Saving..." : "A guardar...",
     "Reason updated successfully" : "Motivo atualizado com sucesso",
-    "Failed to update reason" : "Falha ao atualizar o motivo"
+    "Failed to update reason" : "Falha ao atualizar o motivo",
+    "Protected by {user}" : "Protegida por {user}",
+    "Manage protections" : "Gerir proteções"
 },
 "nplurals=2; plural=(n != 1);");
