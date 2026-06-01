@@ -113,6 +113,14 @@ class AdminController extends Controller {
         try {
             $path = $this->protectionChecker->normalizePath($path);
 
+            // Regular user-folder paths must start with /files/ to match the internal
+            // path format used by StorageWrapper and DAV plugins (which always see paths
+            // like 'files/folder' from the home storage). Auto-correct silently so the
+            // admin does not have to know the internal convention.
+            if (!str_starts_with($path, '/__groupfolders/') && !str_starts_with($path, '/files/')) {
+                $path = '/files' . $path;
+            }
+
             // Obtém o utilizador autenticado do lado do servidor (nunca do cliente)
             $userId = $this->userSession->getUser()?->getUID() ?? '';
 

@@ -160,10 +160,14 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                 $inner  = ltrim($internalPath, '/');
                 $candidates[] = '/' . (($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner);
             } else {
-                $base = (strpos($internalPath, 'files/') !== 0)
-                    ? 'files/' . ltrim($internalPath, '/')
-                    : $internalPath;
-                $candidates[] = '/' . $base;
+                $inner = ltrim($internalPath, '/');
+                if (strpos($inner, 'files/') !== 0) {
+                    $candidates[] = '/' . 'files/' . $inner; // canonical /files/xxx format
+                    $candidates[] = '/' . $inner;            // bare /xxx format (backward compat)
+                } else {
+                    $candidates[] = '/' . $inner;                          // /files/xxx format
+                    $candidates[] = '/' . substr($inner, strlen('files/')); // bare /xxx (backward compat)
+                }
             }
 
             // Secondary: group folder ID format — matches admin-section root entries
