@@ -1,11 +1,6 @@
 import Vue from 'vue'
 import ProtectedFoldersWidget from './components/ProtectedFoldersWidget.vue'
 
-/**
- * OCA.Dashboard.register é inicializado pelo dashboard-main.js do Nextcloud
- * dentro do seu próprio DOMContentLoaded — que corre DEPOIS do nosso porque foi
- * registado depois. Por isso fazemos polling a cada 50 ms até estar disponível.
- */
 function tryRegister() {
 	if (typeof OCA !== 'undefined' && OCA.Dashboard && typeof OCA.Dashboard.register === 'function') {
 		OCA.Dashboard.register('folder_protection', (el) => {
@@ -14,7 +9,10 @@ function tryRegister() {
 		})
 		console.log('[FolderProtection] widget registered successfully')
 	} else {
-		window.setTimeout(tryRegister, 50)
+		// Dashboard API is initialised in a separate DOMContentLoaded handler that runs
+		// after ours. Retry at 300 ms — aggressive enough to be invisible to the user,
+		// conservative enough not to hammer the event loop on every animation frame.
+		window.setTimeout(tryRegister, 300)
 	}
 }
 

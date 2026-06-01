@@ -3,6 +3,7 @@ namespace OCA\FolderProtection\DAV;
 
 use OCA\DAV\Connector\Sabre\Node;
 use OCA\FolderProtection\ProtectionChecker;
+use OCA\FolderProtection\Service\NotificationService;
 use OCP\IL10N;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
@@ -36,16 +37,19 @@ class FolderProtected extends Exception {
 }
 
 class ProtectionPlugin extends ServerPlugin {
+    use GroupFolderStorageTrait;
 
     private $protectionChecker;
+    private NotificationService $notificationService;
     private $logger;
     private $server;
     private IL10N $l10n;
 
-    public function __construct(ProtectionChecker $protectionChecker, LoggerInterface $logger, IL10N $l10n) {
-        $this->protectionChecker = $protectionChecker;
-        $this->logger = $logger;
-        $this->l10n = $l10n;
+    public function __construct(ProtectionChecker $protectionChecker, NotificationService $notificationService, LoggerInterface $logger, IL10N $l10n) {
+        $this->protectionChecker   = $protectionChecker;
+        $this->notificationService = $notificationService;
+        $this->logger              = $logger;
+        $this->l10n                = $l10n;
     }
 
     public function initialize(Server $server) {
@@ -57,7 +61,6 @@ class ProtectionPlugin extends ServerPlugin {
         $server->on('beforeCopy', [$this, 'beforeCopy'], 10);
         $server->on('propPatch', [$this, 'propPatch'], 10);
         $server->on('beforeLock', [$this, 'beforeLock'], 10);
-        $server->on('beforeMethod', [$this, 'beforeMethod'], 10);
 
         $this->logger->info('FolderProtection: WebDAV plugin initialized successfully');
     }
@@ -69,45 +72,7 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     private function sendProtectionNotification(string $path, string $action): void {
-        try {
-            if (!$this->protectionChecker->shouldNotify($path, $action)) {
-                return;
-            }
-
-            $userSession = \OCP\Server::get(\OCP\IUserSession::class);
-            if (!$userSession || !$userSession->isLoggedIn()) {
-                return;
-            }
-            $user = $userSession->getUser();
-            if (!$user) {
-                return;
-            }
-
-            $manager = \OCP\Server::get(\OCP\Notification\IManager::class);
-            $notification = $manager->createNotification();
-
-            $notification->setApp('folder_protection')
-                ->setUser($user->getUID())
-                ->setDateTime(new \DateTime())
-                ->setObject('folder', substr(md5($path), 0, 32))
-                ->setSubject('folder_protected', [
-                    'path' => basename($path),
-                    'action' => $action
-                ]);
-
-            $manager->notify($notification);
-        } catch (\Throwable $e) {
-            $this->logger->error('FolderProtection: Failed to send notification: ' . $e->getMessage());
-        }
-    }
-
-    public function beforeMethod($request, $response) {
-        // NOTE: This handler is registered too late in the Sabre event lifecycle.
-        // SabrePluginAuthInitEvent fires during emit('beforeMethod'), so our listener
-        // is added after the current emit() has already started iterating — meaning
-        // this handler is NEVER called.
-        // DELETE and MOVE protection is handled in beforeUnbind/beforeMove instead.
-        // COPY protection is handled in beforeCopy.
+        $this->notificationService->notifyBlocked($path, $action);
     }
 
     private function sendErrorResponse(int $code, string $message): void {
@@ -162,19 +127,6 @@ class ProtectionPlugin extends ServerPlugin {
         }
 
         return $candidates;
-    }
-
-    private function getGroupFolderIdFromStorage($storage): ?int {
-        $curr  = $storage;
-        $depth = 0;
-        while ($curr !== null && $depth < 20) {
-            if (method_exists($curr, 'getFolderId')) {
-                return (int)$curr->getFolderId();
-            }
-            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
-            $depth++;
-        }
-        return null;
     }
 
     /**
@@ -421,7 +373,7 @@ class ProtectionPlugin extends ServerPlugin {
             foreach ($this->getInternalPathCandidates($path) as $checkPath) {
                 if ($this->protectionChecker->isProtected($checkPath)) {
                     $info = $this->protectionChecker->getProtectionInfo($checkPath);
-                    $reason = 'Protected by server policy';
+                    $reason = $this->l10n->t('Protected by server policy');
                     if (is_array($info) && !empty($info['reason'])) {
                         $reason = (string)$info['reason'];
                     }

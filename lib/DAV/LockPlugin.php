@@ -27,6 +27,7 @@ use Psr\Log\LoggerInterface;
  * - Sem necessidade de restaurar a pasta depois
  */
 class LockPlugin extends ServerPlugin {
+    use GroupFolderStorageTrait;
 
     private ProtectionChecker $protectionChecker;
     private LoggerInterface $logger;
@@ -165,22 +166,6 @@ class LockPlugin extends ServerPlugin {
             ]);
             return [];
         }
-    }
-
-    /**
-     * Traverses the storage wrapper chain to find a GroupFolder storage with getFolderId().
-     */
-    private function getGroupFolderIdFromStorage($storage): ?int {
-        $curr  = $storage;
-        $depth = 0;
-        while ($curr !== null && $depth < 20) {
-            if (method_exists($curr, 'getFolderId')) {
-                return (int)$curr->getFolderId();
-            }
-            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
-            $depth++;
-        }
-        return null;
     }
 
     /**

@@ -70,17 +70,19 @@ class ProtectionChecker {
     public function isProtectedOrParentProtected(string $path): bool {
         $path = $this->normalizePath($path);
 
-        // Primeiro verifica o próprio path
+        // Check the path itself first
         if ($this->isProtected($path)) {
             return true;
         }
 
-        // Depois verifica todos os pais (ex: /a/b/c -> /a, /a/b)
+        // Check ancestor paths (e.g. /a/b/c → /a, /a/b).
+        // We stop one segment short of the full path because that was already checked above.
         $parts = explode('/', trim($path, '/'));
+        array_pop($parts); // drop last segment to avoid re-checking $path
         $currentPath = '';
 
         foreach ($parts as $part) {
-            if (empty($part)) {
+            if ($part === '') {
                 continue;
             }
             $currentPath .= '/' . $part;
@@ -89,7 +91,6 @@ class ProtectionChecker {
             }
         }
 
-        // Nenhum match encontrado
         return false;
     }
 
@@ -110,7 +111,7 @@ class ProtectionChecker {
 
         $result = $qb->executeQuery();
         $folders = [];
-        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+        while ($row = $result->fetchAssociative()) {
             $folders[] = $row['path'];
         }
         $result->closeCursor();
@@ -134,7 +135,7 @@ class ProtectionChecker {
            ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter(md5($path))));
 
         $result = $qb->executeQuery();
-        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $row = $result->fetchAssociative();
         $result->closeCursor();
 
         return $row !== false && $row !== null;
@@ -162,32 +163,27 @@ class ProtectionChecker {
     public function getProtectionInfo(string $path): ?array {
         $path = $this->normalizePath($path);
         
-        // Check cache first
-        // Guardamos false para "não encontrado" e array para "encontrado".
-        // Não podemos usar `$cached ?: null` porque false ?: null = null (cache miss falso).
+        // Check cache first.
+        // We store false for "not found" and array for "found" — we cannot use
+        // `$cached ?: null` because false ?: null = null (false negative on cache hit).
         $cacheKey = 'folder_protection_info_' . md5($path);
-        if ($this->cache !== null) {
-            $cached = $this->cache->get($cacheKey);
-            if ($cached !== null) {
-                return $cached === false ? null : $cached;
-            }
+        $cached = $this->cache->get($cacheKey);
+        if ($cached !== null) {
+            return $cached === false ? null : $cached;
         }
-        
+
         // Query database
         $qb = $this->db->getQueryBuilder();
         $qb->select('*')
             ->from('folder_protection')
             ->where($qb->expr()->eq('path_hash', $qb->createNamedParameter(md5($path))));
-        
+
         $result = $qb->executeQuery();
-        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $row = $result->fetchAssociative();
         $result->closeCursor();
 
-        // Cache result
-        if ($this->cache !== null) {
-            $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
-        }
-        
+        $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
+
         return $row ?: null;
     }
 
@@ -236,6 +232,7 @@ class ProtectionChecker {
         $this->cache->remove('protected_' . md5($path));
         $this->cache->remove('folder_protection_info_' . md5($path));
         $this->cache->remove('all_protected_folders');
+        $this->cache->remove('api_status_response');
     }
 
     /**

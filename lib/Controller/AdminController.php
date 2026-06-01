@@ -64,7 +64,7 @@ class AdminController extends Controller {
             $result = $qb->executeQuery();
             $folders = [];
 
-            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+            while ($row = $result->fetchAssociative()) {
                 $folders[] = [
                     'id' => (int)$row['id'],
                     'path' => $row['path'],
@@ -165,7 +165,7 @@ class AdminController extends Controller {
                      ->from('folder_protection')
                      ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
             $selectResult = $qbSelect->executeQuery();
-            $row = method_exists($selectResult, 'fetchAssociative') ? $selectResult->fetchAssociative() : $selectResult->fetch();
+            $row = $selectResult->fetchAssociative();
             $selectResult->closeCursor();
 
             $qb = $this->db->getQueryBuilder();
@@ -268,7 +268,7 @@ class AdminController extends Controller {
             $qb->select('folder_id', 'mount_point')->from('group_folders');
             $result = $qb->executeQuery();
             $groupFolders = [];
-            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+            while ($row = ($result->fetchAssociative())) {
                 $groupFolders[(int)$row['folder_id']] = $row['mount_point'];
             }
             $result->closeCursor();
@@ -277,10 +277,10 @@ class AdminController extends Controller {
             $qb2 = $this->db->getQueryBuilder();
             $qb2->select('id', 'path', 'reason', 'created_by')
                 ->from('folder_protection')
-                ->where($qb2->expr()->like('path', $qb2->createNamedParameter('/__groupfolders/%')));
+                ->where($qb2->expr()->like('path', $qb2->createNamedParameter($this->db->escapeLikeParameter('/__groupfolders/') . '%')));
             $result2 = $qb2->executeQuery();
             $protected = [];
-            while ($row = (method_exists($result2, 'fetchAssociative') ? $result2->fetchAssociative() : $result2->fetch())) {
+            while ($row = $result2->fetchAssociative()) {
                 if (preg_match('#^/__groupfolders/(\d+)$#', $row['path'], $m)) {
                     $protected[(int)$m[1]] = [
                         'protection_id' => (int)$row['id'],
@@ -296,10 +296,10 @@ class AdminController extends Controller {
             $qb3 = $this->db->getQueryBuilder();
             $qb3->select('id', 'path', 'reason', 'created_by')
                 ->from('folder_protection')
-                ->where($qb3->expr()->like('path', $qb3->createNamedParameter('/files/%')));
+                ->where($qb3->expr()->like('path', $qb3->createNamedParameter($this->db->escapeLikeParameter('/files/') . '%')));
             $result3 = $qb3->executeQuery();
             $customPathByName = [];
-            while ($row = (method_exists($result3, 'fetchAssociative') ? $result3->fetchAssociative() : $result3->fetch())) {
+            while ($row = ($result3->fetchAssociative())) {
                 $basename = basename($row['path']);
                 $customPathByName[$basename] = [
                     'protection_id' => (int)$row['id'],
@@ -348,6 +348,15 @@ class AdminController extends Controller {
     #[NoCSRFRequired]
     public function updateReason(int $id, ?string $reason = null): JSONResponse {
         try {
+            // Fetch path first so we can invalidate the exact cache entry after update
+            $qbSelect = $this->db->getQueryBuilder();
+            $qbSelect->select('path')
+                     ->from('folder_protection')
+                     ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
+            $selectResult = $qbSelect->executeQuery();
+            $row = $selectResult->fetchAssociative();
+            $selectResult->closeCursor();
+
             $qb = $this->db->getQueryBuilder();
             $qb->update('folder_protection')
                ->set('reason', $qb->createNamedParameter($reason))
@@ -360,6 +369,12 @@ class AdminController extends Controller {
                     'success' => false,
                     'message' => 'Folder protection not found'
                 ], 404);
+            }
+
+            if ($row && isset($row['path'])) {
+                $this->protectionChecker->clearCacheForPath($row['path']);
+            } else {
+                $this->protectionChecker->clearCache();
             }
 
             $this->logger->info('Updated reason for folder protection', ['id' => $id]);
@@ -379,6 +394,7 @@ class AdminController extends Controller {
 
     private function clearCacheInternal(): void {
         $this->protectionChecker->clearCache();
+        $this->cacheFactory->createDistributed('folder_protection')->remove('api_status_response');
     }
 
     /**
@@ -435,6 +451,13 @@ class AdminController extends Controller {
     #[NoCSRFRequired]
     public function getFolderStatuses(): JSONResponse {
         try {
+            $cache    = $this->cacheFactory->createDistributed('folder_protection');
+            $cacheKey = 'api_status_response';
+            $cached   = $cache->get($cacheKey);
+            if ($cached !== null) {
+                return new JSONResponse(json_decode($cached, true));
+            }
+
             $qb = $this->db->getQueryBuilder();
             $qb->select('path', 'reason', 'created_by')
                 ->from('folder_protection');
@@ -442,11 +465,11 @@ class AdminController extends Controller {
             $result = $qb->executeQuery();
             $protections = [];
 
-            while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+            while ($row = $result->fetchAssociative()) {
                 $protections[$row['path']] = [
-                    'protected' => true,
-                    'reason' => $row['reason'],
-                    'created_by' => $row['created_by']
+                    'protected'  => true,
+                    'reason'     => $row['reason'],
+                    'created_by' => $row['created_by'],
                 ];
             }
             $result->closeCursor();
@@ -467,6 +490,9 @@ class AdminController extends Controller {
                 }
                 $protections = array_merge($protections, $aliases);
             }
+
+            $payload = ['success' => true, 'protections' => $protections];
+            $cache->set($cacheKey, json_encode($payload), 120); // 2-minute TTL
 
             return new JSONResponse([
                 'success' => true,
@@ -495,7 +521,7 @@ class AdminController extends Controller {
         $qb->select('folder_id', 'mount_point')->from('group_folders');
         $result = $qb->executeQuery();
         $map = [];
-        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+        while ($row = ($result->fetchAssociative())) {
             $map[(int)$row['folder_id']] = $row['mount_point'];
         }
         $result->closeCursor();

@@ -13,7 +13,9 @@ use Psr\Log\LoggerInterface;
  * Plugin que adiciona propriedades DAV customizadas para folders protegidos
  */
 class ProtectionPropertyPlugin extends ServerPlugin {
-    
+    use GroupFolderStorageTrait;
+
+
     private ProtectionChecker $protectionChecker;
     private LoggerInterface $logger;
     private ?\Sabre\DAV\Server $server = null;
@@ -182,19 +184,6 @@ class ProtectionPropertyPlugin extends ServerPlugin {
             ]);
             return [];
         }
-    }
-
-    private function getGroupFolderIdFromStorage($storage): ?int {
-        $curr  = $storage;
-        $depth = 0;
-        while ($curr !== null && $depth < 20) {
-            if (method_exists($curr, 'getFolderId')) {
-                return (int)$curr->getFolderId();
-            }
-            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
-            $depth++;
-        }
-        return null;
     }
 
     /**

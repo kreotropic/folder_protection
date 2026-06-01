@@ -2,20 +2,23 @@
 namespace OCA\FolderProtection;
 
 use OCA\FolderProtection\DAV\FolderLocked;
+use OCA\FolderProtection\Service\NotificationService;
 use OCP\Files\NotPermittedException;
 use OC\Files\Storage\Wrapper\Wrapper;
 use Psr\Log\LoggerInterface;
 
 class StorageWrapper extends Wrapper {
 
-    private $protectionChecker;
+    private ProtectionChecker $protectionChecker;
+    private NotificationService $notificationService;
     /** @var string|null Mount point do storage (ex: '/ncadmin/') — usado para reconstruir o path DAV */
     private ?string $mountPoint;
 
     public function __construct($parameters) {
         parent::__construct($parameters);
-        $this->protectionChecker = $parameters['protectionChecker'];
-        $this->mountPoint = $parameters['mountPoint'] ?? null;
+        $this->protectionChecker   = $parameters['protectionChecker'];
+        $this->notificationService = $parameters['notificationService'];
+        $this->mountPoint          = $parameters['mountPoint'] ?? null;
     }
 
     /**
@@ -57,37 +60,7 @@ class StorageWrapper extends Wrapper {
     }
 
     private function sendProtectionNotification(string $path, string $action): void {
-        try {
-            // Rate limiting: verifica se já notificou recentemente
-            if (!$this->protectionChecker->shouldNotify($path, $action)) {
-                return;
-            }
-
-            $userSession = \OCP\Server::get(\OCP\IUserSession::class);
-            if (!$userSession || !$userSession->isLoggedIn()) {
-                return;
-            }
-            $user = $userSession->getUser();
-            if (!$user) {
-                return;
-            }
-
-            $manager = \OCP\Server::get(\OCP\Notification\IManager::class);
-            $notification = $manager->createNotification();
-
-            $notification->setApp('folder_protection')
-                ->setUser($user->getUID())
-                ->setDateTime(new \DateTime())
-                ->setObject('folder', substr(md5($path), 0, 32))
-                ->setSubject('folder_protected', [
-                    'path' => basename($path),
-                    'action' => $action
-                ]);
-
-            $manager->notify($notification);
-        } catch (\Throwable $e) {
-            \OCP\Server::get(LoggerInterface::class)->error('FolderProtection: Failed to send notification: ' . $e->getMessage());
-        }
+        $this->notificationService->notifyBlocked($path, $action);
     }
 
     public function __call($method, $args) {

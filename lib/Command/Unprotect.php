@@ -47,7 +47,7 @@ class Unprotect extends Command {
            ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
         
         $result = $qb->executeQuery();
-        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $row = $result->fetchAssociative();
         $result->closeCursor();
 
         if (!$row) {
