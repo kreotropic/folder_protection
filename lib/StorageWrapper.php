@@ -116,9 +116,9 @@ class StorageWrapper extends Wrapper {
     }
 
     public function isUpdatable($path): bool {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
-            return false;
-        }
+        // Protected folders are writable (content can be modified inside them).
+        // Protection only prevents the folder itself from being deleted or moved,
+        // which is enforced by the explicit checks in rename/unlink/rmdir and the DAV plugins.
         return $this->storage->isUpdatable($path);
     }
 
@@ -193,7 +193,10 @@ class StorageWrapper extends Wrapper {
 
     public function getPermissions($path): int {
         if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
-            return \OCP\Constants::PERMISSION_READ | \OCP\Constants::PERMISSION_SHARE;
+            // Strip only DELETE — the folder cannot be deleted, but its contents remain
+            // writable. Clients see no 'D' in oc:permissions (also enforced by
+            // ProtectionPropertyPlugin) so they will not attempt to delete the folder.
+            return $this->storage->getPermissions($path) & ~\OCP\Constants::PERMISSION_DELETE;
         }
         return $this->storage->getPermissions($path);
     }

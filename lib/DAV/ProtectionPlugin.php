@@ -157,7 +157,18 @@ class ProtectionPlugin extends ServerPlugin {
             return $this->buildPathsToCheck(['__groupfolders/' . $matches[1] . ($matches[2] ?? '')]);
         }
 
-        return $this->buildPathsToCheck([$uri]);
+        // For user file Sabre paths like 'files/{username}/inner/path', strip the username
+        // component so the result matches the DB format ('files/inner/path').
+        // This is essential when the target node doesn't exist yet (e.g. MOVE destination):
+        // getNodeForPath fails and we must reconstruct the internal path from the URI.
+        $candidates = [$uri];
+        if (preg_match('#^files/[^/]+/(.+)$#', $uri, $m)) {
+            $inner       = $m[1]; // 'inner/path'
+            $candidates[] = 'files/' . $inner;  // canonical: files/inner/path
+            $candidates[] = $inner;              // bare: inner/path (backward compat)
+        }
+
+        return $this->buildPathsToCheck($candidates);
     }
 
     private function buildPathsToCheck(array $paths): array {
@@ -197,6 +208,27 @@ class ProtectionPlugin extends ServerPlugin {
                     throw new FolderProtected($this->l10n->t("The folder '%s' is protected and cannot be created here.", [$folderName]));
                 }
             }
+
+            // Block creation of a folder whose basename matches a protected folder at a different
+            // location, but only when the new path is NOT inside a protected folder.
+            // This prevents desktop clients from creating an orphaned "stepping-stone" folder at the
+            // destination when a MOVE of a protected folder is rejected by the server.
+            $basename = basename($uri);
+            if ($basename !== '') {
+                $insideProtected = false;
+                foreach ($pathsToCheck as $candidate) {
+                    if ($this->protectionChecker->isProtectedOrParentProtected($candidate)) {
+                        $insideProtected = true;
+                        break;
+                    }
+                }
+                if (!$insideProtected && $this->protectionChecker->isAnyProtectedWithBasename($basename)) {
+                    $this->logger->warning("FolderProtection DAV: Blocking bind — basename '$basename' matches a protected folder");
+                    $this->touchAncestors($uri);
+                    $this->setHeaders('create', $this->l10n->t("A protected folder named '%s' exists", [$basename]));
+                    throw new FolderProtected($this->l10n->t("Cannot create '%s': a protected folder with this name already exists on the server.", [$basename]));
+                }
+            }
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
@@ -207,7 +239,6 @@ class ProtectionPlugin extends ServerPlugin {
     public function beforeUnbind($uri) {
         try {
             $pathsToCheck = $this->getInternalPathCandidates($uri);
-
             foreach ($pathsToCheck as $candidate) {
                 $directlyProtected = $this->protectionChecker->isProtected($candidate);
                 $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
@@ -285,6 +316,9 @@ class ProtectionPlugin extends ServerPlugin {
                 $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
                 $this->setHeaders('move', $msg);
                 $this->sendProtectionNotification($candidate, 'move');
+                // Clean up any empty stepping-stone the client may have pre-created at
+                // the destination before sending the MOVE request.
+                $this->deleteEmptyNode($destinationPath);
                 $this->sendErrorResponse(403, $msg);
                 return false;
             }

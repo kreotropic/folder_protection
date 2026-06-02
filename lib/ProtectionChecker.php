@@ -207,6 +207,26 @@ class ProtectionChecker {
     }
 
     /**
+     * Returns true if ANY protected folder has the given basename.
+     * Used by beforeBind to block creation of a folder whose name matches a protected
+     * folder at a different location (prevents orphaned stepping-stone folders from
+     * desktop clients that pre-create the destination before sending MOVE).
+     *
+     * Uses the cached folder list so the cost is negligible after the first call.
+     */
+    public function isAnyProtectedWithBasename(string $basename): bool {
+        if ($basename === '') {
+            return false;
+        }
+        foreach ($this->getProtectedFolders() as $path) {
+            if (basename($this->normalizePath($path)) === $basename) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Verifica se deve enviar notificação (Rate Limiting)
      * Evita spam de notificações para a mesma pasta/ação num curto período.
      * TTL: 30 minutos (1800 segundos)

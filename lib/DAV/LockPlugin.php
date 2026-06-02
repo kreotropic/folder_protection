@@ -187,7 +187,15 @@ class LockPlugin extends ServerPlugin {
         } catch (\Exception $e) {
             // node not found — fallback below
         }
-        return [urldecode($uri)];
+
+        // Strip the username from 'files/{username}/inner/path' to match DB format
+        $candidates = [urldecode($uri)];
+        if (preg_match('#^files/[^/]+/(.+)$#', $uri, $m)) {
+            $inner        = $m[1];
+            $candidates[] = 'files/' . $inner;
+            $candidates[] = $inner;
+        }
+        return array_unique(array_filter($candidates));
     }
 
     /**

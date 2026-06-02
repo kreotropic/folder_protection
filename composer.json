@@ -1,7 +1,18 @@
 {
     "name": "ricardo/folder_protection",
     "require-dev": {
-        "nextcloud/ocp": "^32.0"
+        "nextcloud/ocp": "^32.0",
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "OCA\\FolderProtection\\": "lib/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "OCA\\FolderProtection\\Tests\\": "tests/"
+        }
     },
     "authors": [
         {
