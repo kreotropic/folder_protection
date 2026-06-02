@@ -111,6 +111,89 @@ class WebDAVProtectionTest extends TestCase {
             'Protected folder must remain at original location');
     }
 
+    public function testMoveProtectedFolderIntoNormalFolderIsBlocked(): void {
+        $this->createFolder('/TestProt_MoveIntoNormal_Protected_{$this->runId}');
+        $this->createFolder('/TestProt_MoveIntoNormal_Target_{$this->runId}');
+        $this->protectPath('/files/TestProt_MoveIntoNormal_Protected_{$this->runId}');
+
+        $response = $this->dav('MOVE', '/TestProt_MoveIntoNormal_Protected_{$this->runId}', [
+            'Destination' => $this->davBase . '/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}',
+        ]);
+        $this->createdDavPaths[] = '/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}';
+
+        $this->assertSame(403, $response['http_code'],
+            'Dragging a protected folder into a normal folder must return 403');
+        $this->assertFolderExists('/TestProt_MoveIntoNormal_Protected_{$this->runId}',
+            'Protected folder must remain at original location');
+        $this->assertFolderNotExists('/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}',
+            'Protected folder must not appear inside the target folder');
+    }
+
+    public function testMoveNestedProtectedFolderIntoNormalFolderIsBlocked(): void {
+        // Protected folder is NOT at root: /Parent/Sub/Protected
+        $this->createFolder('/TestProt_NestedParent_{$this->runId}');
+        $this->createFolder('/TestProt_NestedParent_{$this->runId}/Sub');
+        $this->createFolder('/TestProt_NestedParent_{$this->runId}/Sub/Protected');
+        $this->createFolder('/TestProt_NestedTarget_{$this->runId}');
+        $this->protectPath('/files/TestProt_NestedParent_{$this->runId}/Sub/Protected');
+
+        $response = $this->dav('MOVE', '/TestProt_NestedParent_{$this->runId}/Sub/Protected', [
+            'Destination' => $this->davBase . '/TestProt_NestedTarget_{$this->runId}/Protected',
+        ]);
+        $this->createdDavPaths[] = '/TestProt_NestedTarget_{$this->runId}/Protected';
+
+        $this->assertSame(403, $response['http_code'],
+            'MOVE of nested protected folder into normal folder must return 403');
+        $this->assertFolderExists('/TestProt_NestedParent_{$this->runId}/Sub/Protected',
+            'Protected folder must remain at original nested location');
+        $this->assertFolderNotExists('/TestProt_NestedTarget_{$this->runId}/Protected',
+            'No copy must be created at destination');
+    }
+
+    public function testMoveProtectedSubfolderInsideTeamFolderIsBlocked(): void {
+        // Uses the existing "team" group folder (mount point: /team/)
+        // Path in DB: /files/team/Sub (no username)
+        $sub = '/team/TestProt_TeamSub_' . $this->runId;
+        $this->createFolder($sub);
+        $this->protectPath('/files/team/TestProt_TeamSub_' . $this->runId);
+
+        $this->createFolder('/TestProt_TeamTarget_' . $this->runId);
+
+        $response = $this->dav('MOVE', $sub, [
+            'Destination' => $this->davBase . '/TestProt_TeamTarget_' . $this->runId . '/TestProt_TeamSub_' . $this->runId,
+        ]);
+        $this->createdDavPaths[] = '/TestProt_TeamTarget_' . $this->runId . '/TestProt_TeamSub_' . $this->runId;
+
+        $this->assertSame(403, $response['http_code'],
+            'MOVE of protected subfolder inside team folder into normal folder must return 403');
+        $this->assertFolderExists($sub,
+            'Protected subfolder must remain inside the team folder');
+        $this->assertFolderNotExists('/TestProt_TeamTarget_' . $this->runId . '/TestProt_TeamSub_' . $this->runId,
+            'No copy must be created outside the team folder');
+    }
+
+    public function testMoveProtectedSubfolderInsideExternalStorageIsBlocked(): void {
+        // Uses the existing "exttest" external storage (Local, mount point: /exttest/)
+        // Path in DB: /files/exttest/Sub (no username, same convention as group folders)
+        $sub = '/exttest/TestProt_ExtSub_' . $this->runId;
+        $this->createFolder($sub);
+        $this->protectPath('/files/exttest/TestProt_ExtSub_' . $this->runId);
+
+        $this->createFolder('/TestProt_ExtTarget_' . $this->runId);
+
+        $response = $this->dav('MOVE', $sub, [
+            'Destination' => $this->davBase . '/TestProt_ExtTarget_' . $this->runId . '/TestProt_ExtSub_' . $this->runId,
+        ]);
+        $this->createdDavPaths[] = '/TestProt_ExtTarget_' . $this->runId . '/TestProt_ExtSub_' . $this->runId;
+
+        $this->assertSame(403, $response['http_code'],
+            'MOVE of protected subfolder inside external storage into normal folder must return 403');
+        $this->assertFolderExists($sub,
+            'Protected subfolder must remain inside external storage');
+        $this->assertFolderNotExists('/TestProt_ExtTarget_' . $this->runId . '/TestProt_ExtSub_' . $this->runId,
+            'No copy must be created outside the external storage');
+    }
+
     public function testMoveInsideProtectedFolderIsAllowed(): void {
         // Renaming a file that already exists INSIDE a protected folder must still work.
         // Important: the file must be created BEFORE the folder is protected, because

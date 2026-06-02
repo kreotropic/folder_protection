@@ -35,3 +35,5 @@ memory/
 appinfo/signature.json
 
 /vendor/
+.phpunit.result.cache
+*.tmp.*
