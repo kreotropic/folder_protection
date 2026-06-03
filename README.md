@@ -112,11 +112,13 @@ Pull requests welcome! Please open an issue first to discuss significant changes
 
 ![Add Protection Dialog](screenshots/Add_Protection_Interface.png)
 
+![Folder Tree Picker](screenshots/Folder_Picker.png)
+
 ![Single Protected Folder](screenshots/Protected_Folder.png)
 
-*The three snapshots above demonstrate the admin panel listing, the
-"add protection" form and an individual protected path. These images are
-picked up by the App Store crawler to showcase the app.*
+![Dashboard Widget](screenshots/Widget.png)
+
+*The snapshots above demonstrate the admin panel listing, the "add protection" form with the tree-based folder picker, an individual protected path, and the dashboard widget. These images are picked up by the App Store crawler to showcase the app.*
 
 ## Changelog
 
