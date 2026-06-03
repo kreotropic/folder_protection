@@ -450,6 +450,65 @@ class AdminController extends Controller {
     }
 
     /**
+     * List immediate subfolders of a given path for the folder tree picker.
+     * Returns folder names, their DB path, protection status, and whether they have children.
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function browse(string $path = '/'): JSONResponse {
+        $userId = $this->userSession->getUser()?->getUID();
+        if (!$userId) {
+            return new JSONResponse(['error' => 'unauthenticated'], 401);
+        }
+
+        $normalized = preg_replace('#^/files#', '', $this->protectionChecker->normalizePath($path));
+        if ($normalized === '') {
+            $normalized = '/';
+        }
+
+        try {
+            $userFolder = $this->rootFolder->getUserFolder($userId);
+            $node = ($normalized === '/') ? $userFolder : $userFolder->get($normalized);
+
+            if (!($node instanceof Folder)) {
+                return new JSONResponse(['error' => 'not_a_folder'], 400);
+            }
+
+            $items = [];
+            foreach ($node->getDirectoryListing() as $child) {
+                if (!($child instanceof Folder)) {
+                    continue;
+                }
+                if (str_starts_with($child->getName(), '.')) {
+                    continue;
+                }
+                // getPath() returns /userId/files/A/B — convert to DB format /files/A/B
+                $childDbPath = preg_replace('#^/[^/]+/files#', '/files', $child->getPath());
+                $hasChildren = count(array_filter(
+                    $child->getDirectoryListing(),
+                    fn($n) => $n instanceof Folder && !str_starts_with($n->getName(), '.')
+                )) > 0;
+                $items[] = [
+                    'name'        => $child->getName(),
+                    'path'        => $childDbPath,
+                    'isProtected' => $this->protectionChecker->isProtected($childDbPath),
+                    'hasChildren' => $hasChildren,
+                ];
+            }
+
+            usort($items, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
+            $currentDbPath = '/files' . ($normalized === '/' ? '' : $normalized);
+            return new JSONResponse(['items' => $items, 'path' => $currentDbPath]);
+        } catch (\OCP\Files\NotFoundException $e) {
+            return new JSONResponse(['error' => 'not_found'], 404);
+        } catch (\Exception $e) {
+            $this->logger->error('Error browsing folder', ['exception' => $e->getMessage()]);
+            return new JSONResponse(['error' => 'internal'], 500);
+        }
+    }
+
+    /**
      * Get protection status for all folders (accessible to all users — used by UI badges)
      *
      * For group folder paths (/__groupfolders/N), also emits an alias at /files/<mountPoint>

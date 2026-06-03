@@ -193,7 +193,18 @@
                                     :placeholder="t('folder_protection', 'folder or folder/sub/target')"
                                     required
                                 />
+                                <button type="button"
+                                        class="button fp-browse-btn"
+                                        @click="showFolderPicker = !showFolderPicker"
+                                        :title="t('folder_protection', 'Browse folders')">
+                                    📂
+                                </button>
                             </div>
+                            <FolderPicker
+                                v-if="showFolderPicker"
+                                @done="onPickerDone"
+                                @cancel="showFolderPicker = false"
+                            />
                             <p class="form-hint">
                                 {{ t('folder_protection', 'Full path will be: /files/{name}', { name: newFolder.folderName || 'folder/sub/target' }) }}
                                 <span v-if="existsChecking" class="exists-checking">⏳</span>
@@ -263,9 +274,11 @@
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
 import { showSuccess, showError } from '@nextcloud/dialogs'
+import FolderPicker from './FolderPicker.vue'
 
 export default {
     name: 'AdminApp',
+    components: { FolderPicker },
 
     data() {
         return {
@@ -276,6 +289,9 @@ export default {
             submitting: false,
             error: null,
             newFolder: { folderName: '', reason: '' },
+
+            // Folder picker
+            showFolderPicker: false,
 
             // Group folders
             groupFolders: [],
@@ -389,9 +405,31 @@ export default {
         closeModal() {
             this.showAddModal = false
             this.showReasonDialog = false
+            this.showFolderPicker = false
             this.pendingGroupFolder = null
             this.pendingReason = ''
             this.error = null
+        },
+
+        async onPickerDone({ paths, reason }) {
+            this.showFolderPicker = false
+            this.submitting = true
+            try {
+                for (const path of paths) {
+                    await axios.post(generateUrl('/apps/folder_protection/api/protect'), {
+                        path,
+                        reason,
+                        userId: OC.currentUser,
+                    })
+                }
+                showSuccess(this.t('folder_protection', 'Protection added'))
+                this.closeModal()
+                await this.loadFolders()
+            } catch (e) {
+                showError(this.t('folder_protection', 'Error adding protection'))
+            } finally {
+                this.submitting = false
+            }
         },
 
         async loadGroupFolders() {
@@ -945,6 +983,17 @@ export default {
     border: none;
     border-radius: 0;
     flex: 1;
+}
+
+.fp-browse-btn {
+    border: none;
+    border-left: 1px solid var(--color-border);
+    border-radius: 0;
+    padding: 0 10px;
+    height: 100%;
+    font-size: 16px;
+    cursor: pointer;
+    background: var(--color-background-hover);
 }
 
 .form-hint {
