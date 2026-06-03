@@ -16,7 +16,7 @@
 				</div>
 				<div class="folder-protection-widget__details">
 					<span class="folder-protection-widget__name" :title="folder.path">
-						{{ folder.display_name }}
+						{{ folder.path.replace(/^\/files\//, '') }}
 					</span>
 					<span class="folder-protection-widget__meta">
 						<span class="folder-protection-widget__size">{{ formatSize(folder.size) }}</span>
