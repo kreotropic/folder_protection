@@ -19,6 +19,9 @@ use OCP\Util;
 use OC;
 use Psr\Log\LoggerInterface;
 use OCA\DAV\Events\SabrePluginAuthInitEvent;
+use OCA\FolderProtection\Dashboard\ProtectedFoldersWidget;
+use OCA\FolderProtection\Dashboard\WidgetDataService;
+use OCA\FolderProtection\Service\NotificationService;
 
 /**
  * Application
@@ -79,10 +82,21 @@ class Application extends App implements IBootstrap {
             );
         });
 
+        // Regista o NotificationService (envio de notificações de bloqueio)
+        $context->registerService(NotificationService::class, function ($c) {
+            return new NotificationService(
+                $c->get(ProtectionChecker::class),
+                $c->get(\OCP\IUserSession::class),
+                $c->get(\OCP\Notification\IManager::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
         // Regista o ProtectionPlugin (Lógica DAV)
         $context->registerService(ProtectionPlugin::class, function ($c) {
             return new ProtectionPlugin(
                 $c->get(ProtectionChecker::class),
+                $c->get(NotificationService::class),
                 $c->get(LoggerInterface::class),
                 $c->get(\OCP\L10N\IFactory::class)->get('folder_protection')
             );
@@ -157,6 +171,17 @@ class Application extends App implements IBootstrap {
             );
         });
 
+        // Regista o WidgetDataService
+        $context->registerService(WidgetDataService::class, function ($c) {
+            return new WidgetDataService(
+                $c->get(\OCP\IDBConnection::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o widget do Dashboard
+        $context->registerDashboardWidget(ProtectedFoldersWidget::class);
+
         // Regista o hook que irá adicionar o StorageWrapper
         Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addStorageWrapper');
     }
@@ -224,11 +249,13 @@ class Application extends App implements IBootstrap {
         }
 
         try {
-            $protectionChecker = $this->getContainer()->get(ProtectionChecker::class);
+            $protectionChecker   = $this->getContainer()->get(ProtectionChecker::class);
+            $notificationService = $this->getContainer()->get(NotificationService::class);
             return new StorageWrapper([
-                'storage' => $storage,
-                'protectionChecker' => $protectionChecker,
-                'mountPoint' => $mountPoint,
+                'storage'             => $storage,
+                'protectionChecker'   => $protectionChecker,
+                'notificationService' => $notificationService,
+                'mountPoint'          => $mountPoint,
             ]);
         } catch (\Throwable $e) {
             // Logar e falhar com segurança retornando o storage original

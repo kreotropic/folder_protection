@@ -3,6 +3,7 @@ namespace OCA\FolderProtection\DAV;
 
 use OCA\DAV\Connector\Sabre\Node;
 use OCA\FolderProtection\ProtectionChecker;
+use OCA\FolderProtection\Service\NotificationService;
 use OCP\IL10N;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
@@ -36,16 +37,19 @@ class FolderProtected extends Exception {
 }
 
 class ProtectionPlugin extends ServerPlugin {
+    use GroupFolderStorageTrait;
 
     private $protectionChecker;
+    private NotificationService $notificationService;
     private $logger;
     private $server;
     private IL10N $l10n;
 
-    public function __construct(ProtectionChecker $protectionChecker, LoggerInterface $logger, IL10N $l10n) {
-        $this->protectionChecker = $protectionChecker;
-        $this->logger = $logger;
-        $this->l10n = $l10n;
+    public function __construct(ProtectionChecker $protectionChecker, NotificationService $notificationService, LoggerInterface $logger, IL10N $l10n) {
+        $this->protectionChecker   = $protectionChecker;
+        $this->notificationService = $notificationService;
+        $this->logger              = $logger;
+        $this->l10n                = $l10n;
     }
 
     public function initialize(Server $server) {
@@ -57,7 +61,6 @@ class ProtectionPlugin extends ServerPlugin {
         $server->on('beforeCopy', [$this, 'beforeCopy'], 10);
         $server->on('propPatch', [$this, 'propPatch'], 10);
         $server->on('beforeLock', [$this, 'beforeLock'], 10);
-        $server->on('beforeMethod', [$this, 'beforeMethod'], 10);
 
         $this->logger->info('FolderProtection: WebDAV plugin initialized successfully');
     }
@@ -69,45 +72,7 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     private function sendProtectionNotification(string $path, string $action): void {
-        try {
-            if (!$this->protectionChecker->shouldNotify($path, $action)) {
-                return;
-            }
-
-            $userSession = \OC::$server->getUserSession();
-            if (!$userSession || !$userSession->isLoggedIn()) {
-                return;
-            }
-            $user = $userSession->getUser();
-            if (!$user) {
-                return;
-            }
-
-            $manager = \OC::$server->getNotificationManager();
-            $notification = $manager->createNotification();
-
-            $notification->setApp('folder_protection')
-                ->setUser($user->getUID())
-                ->setDateTime(new \DateTime())
-                ->setObject('folder', substr(md5($path), 0, 32))
-                ->setSubject('folder_protected', [
-                    'path' => basename($path),
-                    'action' => $action
-                ]);
-
-            $manager->notify($notification);
-        } catch (\Throwable $e) {
-            $this->logger->error('FolderProtection: Failed to send notification: ' . $e->getMessage());
-        }
-    }
-
-    public function beforeMethod($request, $response) {
-        // NOTE: This handler is registered too late in the Sabre event lifecycle.
-        // SabrePluginAuthInitEvent fires during emit('beforeMethod'), so our listener
-        // is added after the current emit() has already started iterating — meaning
-        // this handler is NEVER called.
-        // DELETE and MOVE protection is handled in beforeUnbind/beforeMove instead.
-        // COPY protection is handled in beforeCopy.
+        $this->notificationService->notifyBlocked($path, $action);
     }
 
     private function sendErrorResponse(int $code, string $message): void {
@@ -123,80 +88,99 @@ class ProtectionPlugin extends ServerPlugin {
         $this->server->httpResponse->setBody($xml);
     }
 
-    private function getInternalPath($uri) {
+    /**
+     * Returns all path candidates for a DAV node.
+     * Includes both the mount-point format (matches file-picker DB entries like
+     * '/files/team/subfolder') and the group folder ID format (matches admin-section
+     * DB entries like '/__groupfolders/1') so that isProtected() finds the path
+     * regardless of which format was used when the protection was stored.
+     */
+    private function resolveNodeCandidates(Node $node): array {
+        if (!method_exists($node, 'getFileInfo')) {
+            return [];
+        }
+        $fileInfo     = $node->getFileInfo();
+        $internalPath = $fileInfo->getInternalPath();
+        $candidates   = [];
+
+        // Primary: mount-point format — matches file-picker stored paths e.g. 'files/team/sub'
+        $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
+        if ($mountSuffix !== '') {
+            $suffix = ltrim($mountSuffix, '/');
+            $inner  = ltrim($internalPath, '/');
+            $candidates[] = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
+        } else {
+            $inner = ltrim($internalPath, '/');
+            if (strpos($inner, 'files/') !== 0) {
+                $candidates[] = 'files/' . $inner; // canonical /files/xxx format
+                $candidates[] = $inner;             // bare /xxx format (backward compat)
+            } else {
+                $candidates[] = $inner;                          // /files/xxx format
+                $candidates[] = substr($inner, strlen('files/')); // bare /xxx (backward compat)
+            }
+        }
+
+        // Secondary: group folder ID format — matches admin-section root entries e.g. '__groupfolders/1'
+        $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
+        if ($folderId !== null) {
+            $inner  = ltrim($internalPath, '/');
+            $idPath = '__groupfolders/' . $folderId;
+            if ($inner !== '' && $inner !== '.') {
+                $idPath .= '/' . $inner;
+            }
+            $candidates[] = $idPath;
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Resolves a DAV URI to all path candidates (mount-point + group folder ID formats),
+     * with URL-decoded variants of each. Falls back to URL-based patterns if the node
+     * cannot be resolved.
+     */
+    private function getInternalPathCandidates($uri): array {
         try {
             $node = $this->server->tree->getNodeForPath($uri);
             if ($node instanceof Node) {
-                if (method_exists($node, 'getFileInfo')) {
-                    $fileInfo = $node->getFileInfo();
-
-                    // Group folder: traversar a cadeia de wrappers para obter o folderId
-                    $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
-                    if ($folderId !== null) {
-                        $subPath = $fileInfo->getInternalPath();
-                        $groupPath = '__groupfolders/' . $folderId;
-                        if (!empty($subPath) && $subPath !== '.') {
-                            $groupPath .= '/' . ltrim($subPath, '/');
-                        }
-                        return $groupPath;
-                    }
-
-                    // Reconstruct the full user-relative path.
-                    // For home storage the internal path is already in 'files/folder' format.
-                    // For external storage the internal path is relative to the external storage
-                    // root, so we prepend the mount-point suffix (stripped of the username).
-                    $internalPath = $fileInfo->getInternalPath();
-                    $mountSuffix  = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
-                    if ($mountSuffix !== '') {
-                        $suffix       = ltrim($mountSuffix, '/');
-                        $inner        = ltrim($internalPath, '/');
-                        $internalPath = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
-                    } elseif (strpos($internalPath, 'files/') !== 0) {
-                        $internalPath = 'files/' . ltrim($internalPath, '/');
-                    }
-                    return $internalPath;
+                $candidates = $this->resolveNodeCandidates($node);
+                if (!empty($candidates)) {
+                    return $this->buildPathsToCheck($candidates);
                 }
             }
         } catch (\Exception $e) {
             $this->logger->debug("FolderProtection DAV: getNodeForPath failed for '$uri': " . $e->getMessage());
         }
 
-        // Fallback para group folders via URL
+        // Fallback for direct group folder URL access (/__groupfolders/{id}/...)
         if (preg_match('#^/remote\.php/(?:web)?dav/__groupfolders/(\d+)(/.*)?$#', $uri, $matches)) {
-            $folderId = $matches[1];
-            $filePath = $matches[2] ?? '';
-            return '__groupfolders/' . $folderId . $filePath;
+            return $this->buildPathsToCheck(['__groupfolders/' . $matches[1] . ($matches[2] ?? '')]);
         }
 
-        // Fallback genérico (não deve chegar aqui em condições normais)
-        return $uri;
+        // For user file Sabre paths like 'files/{username}/inner/path', strip the username
+        // component so the result matches the DB format ('files/inner/path').
+        // This is essential when the target node doesn't exist yet (e.g. MOVE destination):
+        // getNodeForPath fails and we must reconstruct the internal path from the URI.
+        $candidates = [$uri];
+        if (preg_match('#^files/[^/]+/(.+)$#', $uri, $m)) {
+            $inner       = $m[1]; // 'inner/path'
+            $candidates[] = 'files/' . $inner;  // canonical: files/inner/path
+            $candidates[] = $inner;              // bare: inner/path (backward compat)
+        }
+
+        return $this->buildPathsToCheck($candidates);
     }
 
-    /**
-     * Traverse the storage wrapper chain to find a GroupFolder storage with getFolderId().
-     * Returns the folder ID or null if not a group folder.
-     * Depth limit of 20 to handle complex wrapper chains (encryption + groupfolder + others).
-     */
-    private function getGroupFolderIdFromStorage($storage): ?int {
-        $curr = $storage;
-        $depth = 0;
-        while ($curr !== null && $depth < 20) {
-            if (method_exists($curr, 'getFolderId')) {
-                return (int)$curr->getFolderId();
+    private function buildPathsToCheck(array $paths): array {
+        $result = [];
+        foreach ($paths as $p) {
+            $result[] = $p;
+            $decoded = rawurldecode($p);
+            if ($decoded !== $p) {
+                $result[] = $decoded;
             }
-            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
-            $depth++;
         }
-        return null;
-    }
-
-    private function buildPathsToCheck(string $path): array {
-        $paths = [$path];
-        $decodedPath = rawurldecode($path);
-        if ($path !== $decodedPath) {
-            $paths[] = $decodedPath;
-        }
-        return array_unique(array_filter($paths));
+        return array_unique(array_filter($result));
     }
 
     public function beforeBind($uri) {
@@ -209,10 +193,10 @@ class ProtectionPlugin extends ServerPlugin {
                 return;
             }
 
-            $path = $this->getInternalPath($uri);
-            $this->logger->debug("FolderProtection DAV: beforeBind checking '$path'");
+            $pathsToCheck = $this->getInternalPathCandidates($uri);
+            $this->logger->debug("FolderProtection DAV: beforeBind checking " . implode('|', $pathsToCheck));
 
-            foreach ($this->buildPathsToCheck($path) as $candidate) {
+            foreach ($pathsToCheck as $candidate) {
                 if ($this->protectionChecker->isProtected($candidate)) {
                     $folderName = basename($uri);
                     $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $candidate");
@@ -224,6 +208,27 @@ class ProtectionPlugin extends ServerPlugin {
                     throw new FolderProtected($this->l10n->t("The folder '%s' is protected and cannot be created here.", [$folderName]));
                 }
             }
+
+            // Block creation of a folder whose basename matches a protected folder at a different
+            // location, but only when the new path is NOT inside a protected folder.
+            // This prevents desktop clients from creating an orphaned "stepping-stone" folder at the
+            // destination when a MOVE of a protected folder is rejected by the server.
+            $basename = basename($uri);
+            if ($basename !== '') {
+                $insideProtected = false;
+                foreach ($pathsToCheck as $candidate) {
+                    if ($this->protectionChecker->isProtectedOrParentProtected($candidate)) {
+                        $insideProtected = true;
+                        break;
+                    }
+                }
+                if (!$insideProtected && $this->protectionChecker->isAnyProtectedWithBasename($basename)) {
+                    $this->logger->warning("FolderProtection DAV: Blocking bind — basename '$basename' matches a protected folder");
+                    $this->touchAncestors($uri);
+                    $this->setHeaders('create', $this->l10n->t("A protected folder named '%s' exists", [$basename]));
+                    throw new FolderProtected($this->l10n->t("Cannot create '%s': a protected folder with this name already exists on the server.", [$basename]));
+                }
+            }
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
@@ -233,9 +238,7 @@ class ProtectionPlugin extends ServerPlugin {
 
     public function beforeUnbind($uri) {
         try {
-            $path = $this->getInternalPath($uri);
-            $pathsToCheck = $this->buildPathsToCheck($path);
-
+            $pathsToCheck = $this->getInternalPathCandidates($uri);
             foreach ($pathsToCheck as $candidate) {
                 $directlyProtected = $this->protectionChecker->isProtected($candidate);
                 $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
@@ -270,41 +273,61 @@ class ProtectionPlugin extends ServerPlugin {
 
     public function beforeMove($sourcePath, $destinationPath) {
         try {
-            $src = $this->getInternalPath($sourcePath);
-            $pathsToCheck = $this->buildPathsToCheck($src);
+            $srcCandidates  = $this->getInternalPathCandidates($sourcePath);
+            $destCandidates = $this->getInternalPathCandidates($destinationPath);
 
-            foreach ($pathsToCheck as $candidate) {
+            foreach ($srcCandidates as $candidate) {
                 $directlyProtected = $this->protectionChecker->isProtected($candidate);
-                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
+                $insideProtected   = !$directlyProtected && $this->protectionChecker->isProtectedOrParentProtected($candidate);
+                $hasProtectedChild = !$directlyProtected && !$insideProtected && $this->protectionChecker->hasProtectedDescendant($candidate);
 
-                if ($directlyProtected || $hasProtectedChild) {
-                    $this->touchProtectedNode($sourcePath);
-
-                    $reason = $this->l10n->t('Protected by server policy');
-                    if ($directlyProtected) {
-                        $info = $this->protectionChecker->getProtectionInfo($candidate);
-                        if (is_array($info) && !empty($info['reason'])) {
-                            $reason = (string)$info['reason'];
-                        }
-                    } else {
-                        $reason = $this->l10n->t('Contains protected sub-folders');
-                    }
-
-                    $folderName = basename($sourcePath);
-                    $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
-                    $this->setHeaders('move', $msg);
-                    $this->sendProtectionNotification($candidate, 'move');
-                    $this->sendErrorResponse(403, $msg);
-                    return false;
+                if (!$directlyProtected && !$insideProtected && !$hasProtectedChild) {
+                    continue;
                 }
+
+                // Allow moves where both source and destination are within the same
+                // protected scope (e.g. renaming a file inside a protected folder).
+                if ($insideProtected) {
+                    $dstProtected = false;
+                    foreach ($destCandidates as $dst) {
+                        if ($this->protectionChecker->isProtectedOrParentProtected($dst)) {
+                            $dstProtected = true;
+                            break;
+                        }
+                    }
+                    if ($dstProtected) {
+                        continue;
+                    }
+                }
+
+                $this->touchProtectedNode($sourcePath);
+
+                $reason = $this->l10n->t('Protected by server policy');
+                if ($directlyProtected) {
+                    $info = $this->protectionChecker->getProtectionInfo($candidate);
+                    if (is_array($info) && !empty($info['reason'])) {
+                        $reason = (string)$info['reason'];
+                    }
+                } elseif ($hasProtectedChild) {
+                    $reason = $this->l10n->t('Contains protected sub-folders');
+                }
+
+                $folderName = basename($sourcePath);
+                $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
+                $this->setHeaders('move', $msg);
+                $this->sendProtectionNotification($candidate, 'move');
+                // Clean up any empty stepping-stone the client may have pre-created at
+                // the destination before sending the MOVE request.
+                $this->deleteEmptyNode($destinationPath);
+                $this->sendErrorResponse(403, $msg);
+                return false;
             }
 
             // Block rename/move to a protected path (prevents "create temp + rename" bypass)
-            $dst = $this->getInternalPath($destinationPath);
-            foreach ($this->buildPathsToCheck($dst) as $destCandidate) {
+            foreach ($destCandidates as $destCandidate) {
                 if ($this->protectionChecker->isProtected($destCandidate)) {
                     $destName = basename($destinationPath);
-                    $this->logger->warning("FolderProtection DAV: Blocking rename to protected path: $destCandidate (src: $src)");
+                    $this->logger->warning("FolderProtection DAV: Blocking rename to protected path: $destCandidate");
                     $this->deleteEmptyNode($sourcePath);
                     $this->setHeaders('move', $this->l10n->t("Cannot rename to '%s': folder is protected", [$destName]));
                     throw new FolderProtected($this->l10n->t("Cannot rename to '%s': this folder path is protected.", [$destName]));
@@ -335,27 +358,47 @@ class ProtectionPlugin extends ServerPlugin {
 
     public function beforeCopy($sourcePath, $destinationPath) {
         try {
-            $src = $this->getInternalPath($sourcePath);
-            $dest = $this->getInternalPath($destinationPath);
+            $srcCandidates  = $this->getInternalPathCandidates($sourcePath);
+            $destCandidates = $this->getInternalPathCandidates($destinationPath);
 
-            $this->logger->info("FolderProtection DAV: beforeCopy checking src='$src' dest='$dest'");
+            $this->logger->info("FolderProtection DAV: beforeCopy checking src=" . implode('|', $srcCandidates));
 
-            foreach ($this->buildPathsToCheck($src) as $checkSrc) {
+            foreach ($srcCandidates as $checkSrc) {
                 $directlyProtected = $this->protectionChecker->isProtected($checkSrc);
-                $hasProtectedChild  = !$directlyProtected && $this->protectionChecker->hasProtectedDescendant($checkSrc);
+                $insideProtected   = !$directlyProtected && $this->protectionChecker->isProtectedOrParentProtected($checkSrc);
+                $hasProtectedChild = !$directlyProtected && !$insideProtected && $this->protectionChecker->hasProtectedDescendant($checkSrc);
 
-                if ($directlyProtected || $hasProtectedChild) {
-                    if ($directlyProtected) {
-                        $info   = $this->protectionChecker->getProtectionInfo($checkSrc);
-                        $reason = (is_array($info) && !empty($info['reason'])) ? (string)$info['reason'] : 'Protected by server policy';
-                    } else {
-                        $reason = $this->l10n->t('Contains protected sub-folders');
-                    }
-                    $this->logger->warning("FolderProtection DAV: Blocking copy - source protected or has protected descendants: $checkSrc");
-                    $this->setHeaders('copy', $reason);
-                    $this->sendProtectionNotification($checkSrc, 'copy');
-                    throw new FolderLocked($this->l10n->t("Cannot copy protected folder: %s", [basename($src)]));
+                if (!$directlyProtected && !$insideProtected && !$hasProtectedChild) {
+                    continue;
                 }
+
+                // Allow copies where both source and destination are within the same
+                // protected scope (e.g. copy within a protected folder).
+                if ($insideProtected) {
+                    $dstProtected = false;
+                    foreach ($destCandidates as $dst) {
+                        if ($this->protectionChecker->isProtectedOrParentProtected($dst)) {
+                            $dstProtected = true;
+                            break;
+                        }
+                    }
+                    if ($dstProtected) {
+                        continue;
+                    }
+                }
+
+                if ($directlyProtected) {
+                    $info   = $this->protectionChecker->getProtectionInfo($checkSrc);
+                    $reason = (is_array($info) && !empty($info['reason'])) ? (string)$info['reason'] : 'Protected by server policy';
+                } elseif ($hasProtectedChild) {
+                    $reason = $this->l10n->t('Contains protected sub-folders');
+                } else {
+                    $reason = $this->l10n->t('Protected by server policy');
+                }
+                $this->logger->warning("FolderProtection DAV: Blocking copy - source protected or inside/has protected folder: $checkSrc");
+                $this->setHeaders('copy', $reason);
+                $this->sendProtectionNotification($checkSrc, 'copy');
+                throw new FolderLocked($this->l10n->t("Cannot copy protected folder: %s", [basename($sourcePath)]));
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
@@ -366,11 +409,10 @@ class ProtectionPlugin extends ServerPlugin {
 
     public function propPatch($path, \Sabre\DAV\PropPatch $propPatch) {
         try {
-            $internalPath = $this->getInternalPath($path);
-            foreach ($this->buildPathsToCheck($internalPath) as $checkPath) {
+            foreach ($this->getInternalPathCandidates($path) as $checkPath) {
                 if ($this->protectionChecker->isProtected($checkPath)) {
                     $info = $this->protectionChecker->getProtectionInfo($checkPath);
-                    $reason = 'Protected by server policy';
+                    $reason = $this->l10n->t('Protected by server policy');
                     if (is_array($info) && !empty($info['reason'])) {
                         $reason = (string)$info['reason'];
                     }
@@ -389,9 +431,8 @@ class ProtectionPlugin extends ServerPlugin {
 
     public function beforeLock($uri, \Sabre\DAV\Locks\LockInfo $lock) {
         try {
-            $path = $this->getInternalPath($uri);
             if ($lock->scope === \Sabre\DAV\Locks\LockInfo::EXCLUSIVE) {
-                foreach ($this->buildPathsToCheck($path) as $checkPath) {
+                foreach ($this->getInternalPathCandidates($uri) as $checkPath) {
                     if ($this->protectionChecker->isProtected($checkPath)) {
                         $info = $this->protectionChecker->getProtectionInfo($checkPath);
                         $reason = 'Protected by server policy';

@@ -64,7 +64,7 @@ class AdminController extends Controller {
             $result = $qb->executeQuery();
             $folders = [];
 
-            while ($row = $result->fetch()) {
+            while ($row = $result->fetchAssociative()) {
                 $folders[] = [
                     'id' => (int)$row['id'],
                     'path' => $row['path'],
@@ -112,6 +112,14 @@ class AdminController extends Controller {
     public function protect(string $path, ?string $reason = null): JSONResponse {
         try {
             $path = $this->protectionChecker->normalizePath($path);
+
+            // Regular user-folder paths must start with /files/ to match the internal
+            // path format used by StorageWrapper and DAV plugins (which always see paths
+            // like 'files/folder' from the home storage). Auto-correct silently so the
+            // admin does not have to know the internal convention.
+            if (!str_starts_with($path, '/__groupfolders/') && !str_starts_with($path, '/files/')) {
+                $path = '/files' . $path;
+            }
 
             // Obtém o utilizador autenticado do lado do servidor (nunca do cliente)
             $userId = $this->userSession->getUser()?->getUID() ?? '';
@@ -165,7 +173,7 @@ class AdminController extends Controller {
                      ->from('folder_protection')
                      ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
             $selectResult = $qbSelect->executeQuery();
-            $row = method_exists($selectResult, 'fetchAssociative') ? $selectResult->fetchAssociative() : $selectResult->fetch();
+            $row = $selectResult->fetchAssociative();
             $selectResult->closeCursor();
 
             $qb = $this->db->getQueryBuilder();
@@ -268,7 +276,7 @@ class AdminController extends Controller {
             $qb->select('folder_id', 'mount_point')->from('group_folders');
             $result = $qb->executeQuery();
             $groupFolders = [];
-            while ($row = $result->fetch()) {
+            while ($row = ($result->fetchAssociative())) {
                 $groupFolders[(int)$row['folder_id']] = $row['mount_point'];
             }
             $result->closeCursor();
@@ -277,10 +285,10 @@ class AdminController extends Controller {
             $qb2 = $this->db->getQueryBuilder();
             $qb2->select('id', 'path', 'reason', 'created_by')
                 ->from('folder_protection')
-                ->where($qb2->expr()->like('path', $qb2->createNamedParameter('/__groupfolders/%')));
+                ->where($qb2->expr()->like('path', $qb2->createNamedParameter($this->db->escapeLikeParameter('/__groupfolders/') . '%')));
             $result2 = $qb2->executeQuery();
             $protected = [];
-            while ($row = $result2->fetch()) {
+            while ($row = $result2->fetchAssociative()) {
                 if (preg_match('#^/__groupfolders/(\d+)$#', $row['path'], $m)) {
                     $protected[(int)$m[1]] = [
                         'protection_id' => (int)$row['id'],
@@ -296,10 +304,10 @@ class AdminController extends Controller {
             $qb3 = $this->db->getQueryBuilder();
             $qb3->select('id', 'path', 'reason', 'created_by')
                 ->from('folder_protection')
-                ->where($qb3->expr()->like('path', $qb3->createNamedParameter('/files/%')));
+                ->where($qb3->expr()->like('path', $qb3->createNamedParameter($this->db->escapeLikeParameter('/files/') . '%')));
             $result3 = $qb3->executeQuery();
             $customPathByName = [];
-            while ($row = $result3->fetch()) {
+            while ($row = ($result3->fetchAssociative())) {
                 $basename = basename($row['path']);
                 $customPathByName[$basename] = [
                     'protection_id' => (int)$row['id'],
@@ -348,6 +356,15 @@ class AdminController extends Controller {
     #[NoCSRFRequired]
     public function updateReason(int $id, ?string $reason = null): JSONResponse {
         try {
+            // Fetch path first so we can invalidate the exact cache entry after update
+            $qbSelect = $this->db->getQueryBuilder();
+            $qbSelect->select('path')
+                     ->from('folder_protection')
+                     ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
+            $selectResult = $qbSelect->executeQuery();
+            $row = $selectResult->fetchAssociative();
+            $selectResult->closeCursor();
+
             $qb = $this->db->getQueryBuilder();
             $qb->update('folder_protection')
                ->set('reason', $qb->createNamedParameter($reason))
@@ -360,6 +377,12 @@ class AdminController extends Controller {
                     'success' => false,
                     'message' => 'Folder protection not found'
                 ], 404);
+            }
+
+            if ($row && isset($row['path'])) {
+                $this->protectionChecker->clearCacheForPath($row['path']);
+            } else {
+                $this->protectionChecker->clearCache();
             }
 
             $this->logger->info('Updated reason for folder protection', ['id' => $id]);
@@ -379,6 +402,7 @@ class AdminController extends Controller {
 
     private function clearCacheInternal(): void {
         $this->protectionChecker->clearCache();
+        $this->cacheFactory->createDistributed('folder_protection')->remove('api_status_response');
     }
 
     /**
@@ -426,6 +450,65 @@ class AdminController extends Controller {
     }
 
     /**
+     * List immediate subfolders of a given path for the folder tree picker.
+     * Returns folder names, their DB path, protection status, and whether they have children.
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function browse(string $path = '/'): JSONResponse {
+        $userId = $this->userSession->getUser()?->getUID();
+        if (!$userId) {
+            return new JSONResponse(['error' => 'unauthenticated'], 401);
+        }
+
+        $normalized = preg_replace('#^/files#', '', $this->protectionChecker->normalizePath($path));
+        if ($normalized === '') {
+            $normalized = '/';
+        }
+
+        try {
+            $userFolder = $this->rootFolder->getUserFolder($userId);
+            $node = ($normalized === '/') ? $userFolder : $userFolder->get($normalized);
+
+            if (!($node instanceof Folder)) {
+                return new JSONResponse(['error' => 'not_a_folder'], 400);
+            }
+
+            $items = [];
+            foreach ($node->getDirectoryListing() as $child) {
+                if (!($child instanceof Folder)) {
+                    continue;
+                }
+                if (str_starts_with($child->getName(), '.')) {
+                    continue;
+                }
+                // getPath() returns /userId/files/A/B — convert to DB format /files/A/B
+                $childDbPath = preg_replace('#^/[^/]+/files#', '/files', $child->getPath());
+                $hasChildren = count(array_filter(
+                    $child->getDirectoryListing(),
+                    fn($n) => $n instanceof Folder && !str_starts_with($n->getName(), '.')
+                )) > 0;
+                $items[] = [
+                    'name'        => $child->getName(),
+                    'path'        => $childDbPath,
+                    'isProtected' => $this->protectionChecker->isProtected($childDbPath),
+                    'hasChildren' => $hasChildren,
+                ];
+            }
+
+            usort($items, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
+            $currentDbPath = '/files' . ($normalized === '/' ? '' : $normalized);
+            return new JSONResponse(['items' => $items, 'path' => $currentDbPath]);
+        } catch (\OCP\Files\NotFoundException $e) {
+            return new JSONResponse(['error' => 'not_found'], 404);
+        } catch (\Exception $e) {
+            $this->logger->error('Error browsing folder', ['exception' => $e->getMessage()]);
+            return new JSONResponse(['error' => 'internal'], 500);
+        }
+    }
+
+    /**
      * Get protection status for all folders (accessible to all users — used by UI badges)
      *
      * For group folder paths (/__groupfolders/N), also emits an alias at /files/<mountPoint>
@@ -435,6 +518,13 @@ class AdminController extends Controller {
     #[NoCSRFRequired]
     public function getFolderStatuses(): JSONResponse {
         try {
+            $cache    = $this->cacheFactory->createDistributed('folder_protection');
+            $cacheKey = 'api_status_response';
+            $cached   = $cache->get($cacheKey);
+            if ($cached !== null) {
+                return new JSONResponse(json_decode($cached, true));
+            }
+
             $qb = $this->db->getQueryBuilder();
             $qb->select('path', 'reason', 'created_by')
                 ->from('folder_protection');
@@ -442,11 +532,11 @@ class AdminController extends Controller {
             $result = $qb->executeQuery();
             $protections = [];
 
-            while ($row = $result->fetch()) {
+            while ($row = $result->fetchAssociative()) {
                 $protections[$row['path']] = [
-                    'protected' => true,
-                    'reason' => $row['reason'],
-                    'created_by' => $row['created_by']
+                    'protected'  => true,
+                    'reason'     => $row['reason'],
+                    'created_by' => $row['created_by'],
                 ];
             }
             $result->closeCursor();
@@ -467,6 +557,9 @@ class AdminController extends Controller {
                 }
                 $protections = array_merge($protections, $aliases);
             }
+
+            $payload = ['success' => true, 'protections' => $protections];
+            $cache->set($cacheKey, json_encode($payload), 120); // 2-minute TTL
 
             return new JSONResponse([
                 'success' => true,
@@ -495,7 +588,7 @@ class AdminController extends Controller {
         $qb->select('folder_id', 'mount_point')->from('group_folders');
         $result = $qb->executeQuery();
         $map = [];
-        while ($row = $result->fetch()) {
+        while ($row = ($result->fetchAssociative())) {
             $map[(int)$row['folder_id']] = $row['mount_point'];
         }
         $result->closeCursor();

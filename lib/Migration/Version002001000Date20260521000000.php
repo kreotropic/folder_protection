@@ -73,7 +73,7 @@ class Version002001000Date20260521000000 extends SimpleMigrationStep {
         $result = $qb->executeQuery();
         $count = 0;
 
-        while ($row = (method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch())) {
+        while ($row = $result->fetchAssociative()) {
             $trimmed = trim((string)$row['path'], '/');
             $normalized = $trimmed === '' ? '/' : '/' . $trimmed;
 

@@ -1,6 +1,6 @@
 {
   "name": "folder_protection",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch"
@@ -8,6 +8,7 @@
   "dependencies": {
     "@nextcloud/axios": "^2.0.0",
     "@nextcloud/dialogs": "^3.0.0",
+    "@nextcloud/l10n": "^3.4.1",
     "@nextcloud/router": "^2.0.0",
     "vue": "^2.7.14"
   },

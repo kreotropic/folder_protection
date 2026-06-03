@@ -2,20 +2,23 @@
 namespace OCA\FolderProtection;
 
 use OCA\FolderProtection\DAV\FolderLocked;
+use OCA\FolderProtection\Service\NotificationService;
 use OCP\Files\NotPermittedException;
 use OC\Files\Storage\Wrapper\Wrapper;
 use Psr\Log\LoggerInterface;
 
 class StorageWrapper extends Wrapper {
 
-    private $protectionChecker;
+    private ProtectionChecker $protectionChecker;
+    private NotificationService $notificationService;
     /** @var string|null Mount point do storage (ex: '/ncadmin/') — usado para reconstruir o path DAV */
     private ?string $mountPoint;
 
     public function __construct($parameters) {
         parent::__construct($parameters);
-        $this->protectionChecker = $parameters['protectionChecker'];
-        $this->mountPoint = $parameters['mountPoint'] ?? null;
+        $this->protectionChecker   = $parameters['protectionChecker'];
+        $this->notificationService = $parameters['notificationService'];
+        $this->mountPoint          = $parameters['mountPoint'] ?? null;
     }
 
     /**
@@ -56,38 +59,24 @@ class StorageWrapper extends Wrapper {
         return $suffix . '/' . $inner;
     }
 
-    private function sendProtectionNotification(string $path, string $action): void {
-        try {
-            // Rate limiting: verifica se já notificou recentemente
-            if (!$this->protectionChecker->shouldNotify($path, $action)) {
-                return;
-            }
-
-            $userSession = \OC::$server->getUserSession();
-            if (!$userSession || !$userSession->isLoggedIn()) {
-                return;
-            }
-            $user = $userSession->getUser();
-            if (!$user) {
-                return;
-            }
-
-            $manager = \OC::$server->getNotificationManager();
-            $notification = $manager->createNotification();
-
-            $notification->setApp('folder_protection')
-                ->setUser($user->getUID())
-                ->setDateTime(new \DateTime())
-                ->setObject('folder', substr(md5($path), 0, 32))
-                ->setSubject('folder_protected', [
-                    'path' => basename($path),
-                    'action' => $action
-                ]);
-
-            $manager->notify($notification);
-        } catch (\Throwable $e) {
-            \OC::$server->get(LoggerInterface::class)->error('FolderProtection: Failed to send notification: ' . $e->getMessage());
+    /**
+     * Checks both the canonical path and the bare variant (without 'files/' prefix)
+     * to support DB entries stored in either format.
+     */
+    private function isProtectedAny(string $path): bool {
+        if ($this->protectionChecker->isProtectedOrParentProtected($path)) {
+            return true;
         }
+        // Also check without leading 'files/' for entries stored without that prefix
+        if (strpos(ltrim($path, '/'), 'files/') === 0) {
+            $bare = substr(ltrim($path, '/'), strlen('files/'));
+            return $this->protectionChecker->isProtectedOrParentProtected($bare);
+        }
+        return false;
+    }
+
+    private function sendProtectionNotification(string $path, string $action): void {
+        $this->notificationService->notifyBlocked($path, $action);
     }
 
     public function __call($method, $args) {
@@ -127,28 +116,36 @@ class StorageWrapper extends Wrapper {
     }
 
     public function isUpdatable($path): bool {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
-            return false;
-        }
+        // Protected folders are writable (content can be modified inside them).
+        // Protection only prevents the folder itself from being deleted or moved,
+        // which is enforced by the explicit checks in rename/unlink/rmdir and the DAV plugins.
         return $this->storage->isUpdatable($path);
     }
 
     public function copy($source, $target): bool {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
-            $this->sendProtectionNotification($source, 'copy');
+        $srcPath = $this->buildCheckPath($source);
+        $tgtPath = $this->buildCheckPath($target);
+        // Block only when copying OUT of a protected scope; copying within the same
+        // protected folder (e.g. sync temp-file pattern) must remain allowed.
+        if ($this->isProtectedAny($srcPath) && !$this->isProtectedAny($tgtPath)) {
+            $this->sendProtectionNotification($srcPath, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
         return $this->storage->copy($source, $target);
     }
 
     public function rename(string $source, string $target): bool {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
-            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
-            $this->sendProtectionNotification($source, 'move');
+        $srcPath = $this->buildCheckPath($source);
+        $tgtPath = $this->buildCheckPath($target);
+        // Block only when moving OUT of a protected scope; renaming within the same
+        // protected folder (e.g. write-to-temp-then-rename sync pattern) must stay allowed.
+        if ($this->isProtectedAny($srcPath) && !$this->isProtectedAny($tgtPath)) {
+            \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move out of protected folder: $source → $target");
+            $this->sendProtectionNotification($srcPath, 'move');
             throw new FolderLocked("Moving protected folders is not allowed");
         }
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($target))) {
-            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename to protected path: $target");
+        if ($this->protectionChecker->isProtected($tgtPath)) {
+            \OCP\Server::get(LoggerInterface::class)->warning("FolderProtection: blocked rename to protected path: $target");
             throw new FolderLocked("Cannot move or rename to a protected folder path");
         }
         return $this->storage->rename($source, $target);
@@ -163,18 +160,9 @@ class StorageWrapper extends Wrapper {
     }
 
     public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
-        if (!empty($sourceInternalPath) && $this->protectionChecker->isProtected($sourceInternalPath)) {
+        if (!empty($sourceInternalPath) && $this->isProtectedAny($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
-        }
-
-        if (method_exists($sourceStorage, 'getFolderId')) {
-            $folderId = $sourceStorage->getFolderId();
-            $groupFolderPath = "/__groupfolders/$folderId";
-            if ($this->protectionChecker->isProtectedOrParentProtected($groupFolderPath)) {
-                $this->sendProtectionNotification($groupFolderPath, 'copy');
-                throw new FolderLocked('This group folder is protected and cannot be copied.', false);
-            }
         }
 
         if ($this->protectionChecker->isProtected($targetInternalPath)) {
@@ -185,7 +173,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function moveFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
-        if ($this->protectionChecker->isProtected($sourceInternalPath)) {
+        if ($this->isProtectedAny($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'move');
             throw new FolderLocked('This folder is protected and cannot be moved.', false);
         }
@@ -205,7 +193,10 @@ class StorageWrapper extends Wrapper {
 
     public function getPermissions($path): int {
         if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
-            return \OCP\Constants::PERMISSION_READ | \OCP\Constants::PERMISSION_SHARE;
+            // Strip only DELETE — the folder cannot be deleted, but its contents remain
+            // writable. Clients see no 'D' in oc:permissions (also enforced by
+            // ProtectionPropertyPlugin) so they will not attempt to delete the folder.
+            return $this->storage->getPermissions($path) & ~\OCP\Constants::PERMISSION_DELETE;
         }
         return $this->storage->getPermissions($path);
     }
