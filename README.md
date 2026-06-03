@@ -8,7 +8,7 @@ When users move 300GB+ folders, Nextcloud servers can crash or become unresponsi
 
 ## Features
 
-- Block delete, move, and copy of protected folders — including moving content **out of** a protected folder
+- Block delete, move, and copy of protected folders — protecting a subfolder also implicitly protects all its parent folders
 - Two-layer protection (WebDAV + Storage layer)
 - External storage support (SMB, S3, local mount, WebDAV, etc.)
 - Group Folder support (protect any group folder from the admin panel without being a member)
