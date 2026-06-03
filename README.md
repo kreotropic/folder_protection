@@ -73,6 +73,8 @@ Folders inside external storage mounts (SMB, S3, local mount, WebDAV, etc.) are 
 
 ## Known Limitations
 
+- **Protection is path-based, not per-user.** A protected path like `/files/reports` applies to every user who has a folder at that path. There is no way to protect a folder for one user without also protecting the same-named folder for all other users.
+
 - **"Copy" button hidden in bulk selection** when any protected folder is included, even alongside non-protected ones. Copying a protected folder is blocked server-side anyway; hiding the button avoids a confusing error. To copy non-protected items, deselect any protected folders first.
 
 - **Deletion is always reverted automatically.** The server rejects DELETE and the folder reappears on the next sync. For regular protected folders the desktop client also suppresses the delete attempt entirely (no `D` permission). For Group Folders the folder is re-mounted from the database regardless.
