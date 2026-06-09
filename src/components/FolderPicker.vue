@@ -1,5 +1,5 @@
 <template>
-    <div class="fp-tree-picker">
+    <div class="fp-tree-picker" :class="{ 'fp-full-height': fullHeight }">
         <!-- Root loading -->
         <div v-if="loadingRoot" class="fp-loading">
             <span class="icon-loading-small"></span>
@@ -22,10 +22,10 @@
                 <button
                     v-if="node.hasChildren"
                     class="fp-arrow-btn"
+                    :class="{ 'is-expanded': node.expanded, 'is-loading': node.loadingChildren }"
                     @click="toggle(node)"
                     :title="node.expanded ? t('folder_protection', 'Collapse') : t('folder_protection', 'Expand')">
                     <span v-if="node.loadingChildren" class="icon-loading-small fp-spin"></span>
-                    <span v-else>{{ node.expanded ? '▼' : '►' }}</span>
                 </button>
                 <span v-else class="fp-arrow-placeholder"></span>
 
@@ -39,7 +39,7 @@
                     @change="toggleSelect(node.path)" />
 
                 <!-- Folder icon + name -->
-                <span class="icon-folder fp-folder-icon"></span>
+                <span class="fp-folder-icon">📁</span>
                 <span class="fp-node-name">{{ node.name }}</span>
                 <span v-if="node.isProtected" class="fp-lock" :title="t('folder_protection', 'Already protected')">🔒</span>
             </div>
@@ -77,6 +77,9 @@ import { translate as t } from '@nextcloud/l10n'
 export default {
     name: 'FolderPicker',
     emits: ['done', 'cancel'],
+    props: {
+        fullHeight: { type: Boolean, default: false },
+    },
 
     data() {
         return {
@@ -225,7 +228,6 @@ export default {
     cursor: pointer;
     padding: 0 2px;
     width: 20px;
-    font-size: 10px;
     color: var(--color-text-maxcontrast);
     flex-shrink: 0;
     display: flex;
@@ -233,6 +235,18 @@ export default {
     justify-content: center;
 }
 .fp-arrow-btn:hover { color: var(--color-main-text); }
+.fp-arrow-btn::before {
+    content: '';
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+}
+.fp-arrow-btn.is-expanded::before { transform: rotate(45deg); }
+.fp-arrow-btn.is-loading::before  { display: none; }
 
 .fp-arrow-placeholder {
     display: inline-block;
@@ -249,7 +263,6 @@ export default {
 
 .fp-folder-icon {
     flex-shrink: 0;
-    opacity: 0.8;
 }
 
 .fp-node-name {
@@ -288,5 +301,15 @@ export default {
     display: flex;
     justify-content: flex-end;
     gap: 6px;
+}
+
+.fp-tree-picker.fp-full-height {
+    border: none;
+    margin-top: 0;
+    min-height: 460px;
+}
+
+.fp-tree-picker.fp-full-height .fp-tree-scroll {
+    max-height: 380px;
 }
 </style>

@@ -30,6 +30,7 @@ DEV_CHANGELOG.md
 manual_curl_test.sh
 test_etag.sh
 memory/
+CLAUDE.md
 
 # build/signing output
 appinfo/signature.json
