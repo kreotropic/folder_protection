@@ -25,6 +25,7 @@ Thumbs.db
 *.log
 
 # Development artifacts
+screenshots/README.md
 gemini_worklog.md
 DEV_CHANGELOG.md
 manual_curl_test.sh
