@@ -96,158 +96,169 @@
             <div class="modal-content" @click.stop>
                 <h3>{{ t('folder_protection', 'Add Folder Protection') }}</h3>
 
-                <!-- Tabs (só visível se groupfolders disponível) -->
-                <div v-if="groupFoldersAvailable" class="tabs">
-                    <button
-                        class="tab-btn"
-                        :class="{ active: activeTab === 'groupfolders' }"
-                        @click="activeTab = 'groupfolders'">
-                        {{ t('folder_protection', 'Group Folders') }}
-                    </button>
-                    <button
-                        class="tab-btn"
-                        :class="{ active: activeTab === 'custom' }"
-                        @click="activeTab = 'custom'">
-                        {{ t('folder_protection', 'Custom Path') }}
-                    </button>
+                <div class="fp-modal-body">
+                <transition name="fp-switch">
+                <!-- Modo picker: ocupa toda a área do modal -->
+                <div v-if="pickerMode" key="picker">
+                    <FolderPicker
+                        :fullHeight="true"
+                        @done="onPickerDone"
+                        @cancel="pickerMode = false"
+                    />
                 </div>
 
-                <!-- Tab: Group Folders -->
-                <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable">
-                    <div v-if="loadingGroupFolders" class="loading-container">
-                        <span class="icon-loading"></span>
-                        {{ t('folder_protection', 'Loading group folders...') }}
+                <!-- Modo normal: tabs + formulário -->
+                <div v-else key="form">
+                    <!-- Tabs (só visível se groupfolders disponível) -->
+                    <div v-if="groupFoldersAvailable" class="tabs">
+                        <button
+                            class="tab-btn"
+                            :class="{ active: activeTab === 'groupfolders' }"
+                            @click="activeTab = 'groupfolders'">
+                            {{ t('folder_protection', 'Group Folders') }}
+                        </button>
+                        <button
+                            class="tab-btn"
+                            :class="{ active: activeTab === 'custom' }"
+                            @click="activeTab = 'custom'">
+                            {{ t('folder_protection', 'Custom Path') }}
+                        </button>
                     </div>
-                    <div v-else-if="groupFolders.length === 0" class="empty-content" style="padding: 30px 0">
-                        <p>{{ t('folder_protection', 'No group folders found.') }}</p>
-                    </div>
-                    <div v-else class="group-folders-list">
-                        <div v-for="gf in groupFolders" :key="gf.id" class="gf-item">
-                            <div class="gf-info">
-                                <div class="gf-name">📂 {{ gf.mountPoint }}</div>
-                                <div class="gf-path">{{ gf.path }}</div>
-                                <div v-if="gf.protected && gf.reason" class="gf-reason">{{ gf.reason }}</div>
+
+                    <!-- Tab: Group Folders -->
+                    <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable">
+                        <div v-if="loadingGroupFolders" class="loading-container">
+                            <span class="icon-loading"></span>
+                            {{ t('folder_protection', 'Loading group folders...') }}
+                        </div>
+                        <div v-else-if="groupFolders.length === 0" class="empty-content" style="padding: 30px 0">
+                            <p>{{ t('folder_protection', 'No group folders found.') }}</p>
+                        </div>
+                        <div v-else class="group-folders-list">
+                            <div v-for="gf in groupFolders" :key="gf.id" class="gf-item">
+                                <div class="gf-info">
+                                    <div class="gf-name">📂 {{ gf.mountPoint }}</div>
+                                    <div class="gf-path">{{ gf.path }}</div>
+                                    <div v-if="gf.protected && gf.reason" class="gf-reason">{{ gf.reason }}</div>
+                                </div>
+                                <div class="gf-actions">
+                                    <span v-if="gf.protected && !gf.partialProtection" class="badge-protected">
+                                        🔒 {{ t('folder_protection', 'Protected') }}
+                                    </span>
+                                    <span v-if="gf.partialProtection" class="badge-partial"
+                                          :title="t('folder_protection', 'Protected via custom path ({path}). This only blocks folder name creation but does not fully protect the group folder from deletion or move. Remove and re-add via Group Folders tab.', { path: gf.protectionPath || '/files/' + gf.mountPoint })">
+                                        ⚠️ {{ t('folder_protection', 'Partial') }}
+                                    </span>
+                                    <button
+                                        v-if="gf.protected"
+                                        class="button"
+                                        @click="unprotectGroupFolder(gf)">
+                                        {{ t('folder_protection', 'Remove') }}
+                                    </button>
+                                    <button
+                                        v-else
+                                        class="button primary"
+                                        @click="openReasonDialog(gf)">
+                                        {{ t('folder_protection', 'Protect') }}
+                                    </button>
+                                </div>
                             </div>
-                            <div class="gf-actions">
-                                <span v-if="gf.protected && !gf.partialProtection" class="badge-protected">
-                                    🔒 {{ t('folder_protection', 'Protected') }}
-                                </span>
-                                <span v-if="gf.partialProtection" class="badge-partial"
-                                      :title="t('folder_protection', 'Protected via custom path ({path}). This only blocks folder name creation but does not fully protect the group folder from deletion or move. Remove and re-add via Group Folders tab.', { path: gf.protectionPath || '/files/' + gf.mountPoint })">
-                                    ⚠️ {{ t('folder_protection', 'Partial') }}
-                                </span>
-                                <button
-                                    v-if="gf.protected"
-                                    class="button"
-                                    @click="unprotectGroupFolder(gf)">
-                                    {{ t('folder_protection', 'Remove') }}
-                                </button>
-                                <button
-                                    v-else
-                                    class="button primary"
-                                    @click="openReasonDialog(gf)">
-                                    {{ t('folder_protection', 'Protect') }}
-                                </button>
+                        </div>
+
+                        <!-- Dialog de motivo (inline) -->
+                        <div v-if="showReasonDialog" class="reason-dialog-overlay" @click.self="cancelReasonDialog">
+                            <div class="reason-dialog">
+                                <h4>{{ t('folder_protection', 'Protect "{name}"?', { name: pendingGroupFolder && pendingGroupFolder.mountPoint }) }}</h4>
+                                <div class="form-group">
+                                    <label>{{ t('folder_protection', 'Reason (optional)') }}</label>
+                                    <textarea
+                                        v-model="pendingReason"
+                                        :placeholder="t('folder_protection', 'Why is this folder protected?')"
+                                        rows="3"
+                                        autofocus
+                                    ></textarea>
+                                </div>
+                                <div class="form-actions">
+                                    <button class="button" @click="cancelReasonDialog">
+                                        {{ t('folder_protection', 'Cancel') }}
+                                    </button>
+                                    <button class="button primary" :disabled="submitting" @click="confirmProtectGroupFolder">
+                                        {{ submitting ? t('folder_protection', 'Adding...') : t('folder_protection', 'Confirm') }}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Dialog de motivo (inline) -->
-                    <div v-if="showReasonDialog" class="reason-dialog-overlay" @click.self="cancelReasonDialog">
-                        <div class="reason-dialog">
-                            <h4>{{ t('folder_protection', 'Protect "{name}"?', { name: pendingGroupFolder && pendingGroupFolder.mountPoint }) }}</h4>
+                    <!-- Tab: Custom Path -->
+                    <div v-if="activeTab === 'custom' || !groupFoldersAvailable">
+                        <form @submit.prevent="addProtection">
                             <div class="form-group">
-                                <label>{{ t('folder_protection', 'Reason (optional)') }}</label>
+                                <label for="folder-path">
+                                    {{ t('folder_protection', 'Folder Path') }}
+                                </label>
+                                <div class="path-input-wrapper">
+                                    <span class="path-prefix">/files/</span>
+                                    <input
+                                        id="folder-path"
+                                        v-model="newFolder.folderName"
+                                        type="text"
+                                        :placeholder="t('folder_protection', 'folder or folder/sub/target')"
+                                        required
+                                    />
+                                    <button type="button"
+                                            class="button fp-browse-btn"
+                                            @click="pickerMode = true"
+                                            :title="t('folder_protection', 'Browse folders')">
+                                        📂
+                                    </button>
+                                </div>
+                                <p class="form-hint">
+                                    {{ t('folder_protection', 'Full path will be: /files/{name}', { name: newFolder.folderName || 'folder/sub/target' }) }}
+                                    <span v-if="existsChecking" class="exists-checking">⏳</span>
+                                    <span v-else-if="existsResult === true" class="exists-ok">✔ {{ t('folder_protection', 'Folder found') }}</span>
+                                </p>
+                                <p v-if="existsResult === false" class="form-error">
+                                    ❌ {{ t('folder_protection', 'Folder not found. Create it first or check the path.') }}
+                                </p>
+                                <p v-if="existsResult === 'file'" class="form-error">
+                                    ❌ {{ t('folder_protection', 'This path points to a file, not a folder.') }}
+                                </p>
+                                <p v-if="matchingGroupFolder" class="form-warning">
+                                    ⚠️ {{ t('folder_protection', '"{name}" is a Group Folder. Use the Group Folders tab for full protection — this custom path only blocks name creation but does not protect the group folder from deletion or move.', { name: newFolder.folderName }) }}
+                                </p>
+                            </div>
+                            <div class="form-group">
+                                <label for="folder-reason">
+                                    {{ t('folder_protection', 'Reason (optional)') }}
+                                </label>
                                 <textarea
-                                    v-model="pendingReason"
+                                    id="folder-reason"
+                                    v-model="newFolder.reason"
                                     :placeholder="t('folder_protection', 'Why is this folder protected?')"
                                     rows="3"
-                                    autofocus
                                 ></textarea>
                             </div>
                             <div class="form-actions">
-                                <button class="button" @click="cancelReasonDialog">
+                                <button type="button" @click="closeModal" class="button">
                                     {{ t('folder_protection', 'Cancel') }}
                                 </button>
-                                <button class="button primary" :disabled="submitting" @click="confirmProtectGroupFolder">
-                                    {{ submitting ? t('folder_protection', 'Adding...') : t('folder_protection', 'Confirm') }}
+                                <button type="submit" class="button primary" :disabled="!canSubmit">
+                                    {{ submitting ? t('folder_protection', 'Adding...') : t('folder_protection', 'Add Protection') }}
                                 </button>
                             </div>
-                        </div>
+                        </form>
+                        <div v-if="error" class="error-message">{{ error }}</div>
+                    </div>
+
+                    <!-- Botão fechar quando em tab groupfolders -->
+                    <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable && !showReasonDialog" class="form-actions" style="margin-top: 16px;">
+                        <button class="button" @click="closeModal">
+                            {{ t('folder_protection', 'Close') }}
+                        </button>
                     </div>
                 </div>
-
-                <!-- Tab: Custom Path -->
-                <div v-if="activeTab === 'custom' || !groupFoldersAvailable">
-                    <form @submit.prevent="addProtection">
-                        <div class="form-group">
-                            <label for="folder-path">
-                                {{ t('folder_protection', 'Folder Path') }}
-                            </label>
-                            <div class="path-input-wrapper">
-                                <span class="path-prefix">/files/</span>
-                                <input
-                                    id="folder-path"
-                                    v-model="newFolder.folderName"
-                                    type="text"
-                                    :placeholder="t('folder_protection', 'folder or folder/sub/target')"
-                                    required
-                                />
-                                <button type="button"
-                                        class="button fp-browse-btn"
-                                        @click="showFolderPicker = !showFolderPicker"
-                                        :title="t('folder_protection', 'Browse folders')">
-                                    📂
-                                </button>
-                            </div>
-                            <FolderPicker
-                                v-if="showFolderPicker"
-                                @done="onPickerDone"
-                                @cancel="showFolderPicker = false"
-                            />
-                            <p class="form-hint">
-                                {{ t('folder_protection', 'Full path will be: /files/{name}', { name: newFolder.folderName || 'folder/sub/target' }) }}
-                                <span v-if="existsChecking" class="exists-checking">⏳</span>
-                                <span v-else-if="existsResult === true" class="exists-ok">✔ {{ t('folder_protection', 'Folder found') }}</span>
-                            </p>
-                            <p v-if="existsResult === false" class="form-error">
-                                ❌ {{ t('folder_protection', 'Folder not found. Create it first or check the path.') }}
-                            </p>
-                            <p v-if="existsResult === 'file'" class="form-error">
-                                ❌ {{ t('folder_protection', 'This path points to a file, not a folder.') }}
-                            </p>
-                            <p v-if="matchingGroupFolder" class="form-warning">
-                                ⚠️ {{ t('folder_protection', '"{name}" is a Group Folder. Use the Group Folders tab for full protection — this custom path only blocks name creation but does not protect the group folder from deletion or move.', { name: newFolder.folderName }) }}
-                            </p>
-                        </div>
-                        <div class="form-group">
-                            <label for="folder-reason">
-                                {{ t('folder_protection', 'Reason (optional)') }}
-                            </label>
-                            <textarea
-                                id="folder-reason"
-                                v-model="newFolder.reason"
-                                :placeholder="t('folder_protection', 'Why is this folder protected?')"
-                                rows="3"
-                            ></textarea>
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" @click="closeModal" class="button">
-                                {{ t('folder_protection', 'Cancel') }}
-                            </button>
-                            <button type="submit" class="button primary" :disabled="!canSubmit">
-                                {{ submitting ? t('folder_protection', 'Adding...') : t('folder_protection', 'Add Protection') }}
-                            </button>
-                        </div>
-                    </form>
-                    <div v-if="error" class="error-message">{{ error }}</div>
-                </div>
-
-                <!-- Botão fechar quando em tab groupfolders -->
-                <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable && !showReasonDialog" class="form-actions" style="margin-top: 16px;">
-                    <button class="button" @click="closeModal">
-                        {{ t('folder_protection', 'Close') }}
-                    </button>
+                </transition>
                 </div>
             </div>
         </div>
@@ -291,7 +302,7 @@ export default {
             newFolder: { folderName: '', reason: '' },
 
             // Folder picker
-            showFolderPicker: false,
+            pickerMode: false,
 
             // Group folders
             groupFolders: [],
@@ -405,14 +416,13 @@ export default {
         closeModal() {
             this.showAddModal = false
             this.showReasonDialog = false
-            this.showFolderPicker = false
+            this.pickerMode = false
             this.pendingGroupFolder = null
             this.pendingReason = ''
             this.error = null
         },
 
         async onPickerDone({ paths, reason }) {
-            this.showFolderPicker = false
             this.submitting = true
             try {
                 for (const path of paths) {
@@ -1042,6 +1052,23 @@ export default {
     background-color: var(--color-error, #e9322d) !important;
     border-color: var(--color-error, #e9322d) !important;
     color: #fff !important;
+}
+
+.fp-modal-body {
+    position: relative;
+}
+
+.fp-switch-enter-active,
+.fp-switch-leave-active {
+    transition: opacity 0.18s ease;
+}
+.fp-switch-leave-active {
+    position: absolute;
+    inset: 0;
+}
+.fp-switch-enter-from,
+.fp-switch-leave-to {
+    opacity: 0;
 }
 
 .folder-edit {
