@@ -290,6 +290,7 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex-shrink: 0;
 }
 
 .fp-reason-input {
@@ -306,10 +307,13 @@ export default {
 .fp-tree-picker.fp-full-height {
     border: none;
     margin-top: 0;
-    min-height: 460px;
+    flex: 1;
+    min-height: 0;
 }
 
 .fp-tree-picker.fp-full-height .fp-tree-scroll {
-    max-height: 380px;
+    flex: 1;
+    max-height: none;
+    min-height: 0;
 }
 </style>

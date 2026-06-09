@@ -99,7 +99,7 @@
                 <div class="fp-modal-body">
                 <transition name="fp-switch">
                 <!-- Modo picker: ocupa toda a área do modal -->
-                <div v-if="pickerMode" key="picker">
+                <div v-if="pickerMode" key="picker" class="fp-picker-panel">
                     <FolderPicker
                         :fullHeight="true"
                         @done="onPickerDone"
@@ -108,7 +108,7 @@
                 </div>
 
                 <!-- Modo normal: tabs + formulário -->
-                <div v-else key="form">
+                <div v-else key="form" class="fp-form-panel">
                     <!-- Tabs (só visível se groupfolders disponível) -->
                     <div v-if="groupFoldersAvailable" class="tabs">
                         <button
@@ -126,7 +126,7 @@
                     </div>
 
                     <!-- Tab: Group Folders -->
-                    <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable">
+                    <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable" class="fp-tab-content">
                         <div v-if="loadingGroupFolders" class="loading-container">
                             <span class="icon-loading"></span>
                             {{ t('folder_protection', 'Loading group folders...') }}
@@ -191,7 +191,7 @@
                     </div>
 
                     <!-- Tab: Custom Path -->
-                    <div v-if="activeTab === 'custom' || !groupFoldersAvailable">
+                    <div v-if="activeTab === 'custom' || !groupFoldersAvailable" class="fp-tab-content">
                         <form @submit.prevent="addProtection">
                             <div class="form-group">
                                 <label for="folder-path">
@@ -239,6 +239,7 @@
                                     rows="3"
                                 ></textarea>
                             </div>
+                            <div v-if="error" class="error-message">{{ error }}</div>
                             <div class="form-actions">
                                 <button type="button" @click="closeModal" class="button">
                                     {{ t('folder_protection', 'Cancel') }}
@@ -248,11 +249,10 @@
                                 </button>
                             </div>
                         </form>
-                        <div v-if="error" class="error-message">{{ error }}</div>
                     </div>
 
                     <!-- Botão fechar quando em tab groupfolders -->
-                    <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable && !showReasonDialog" class="form-actions" style="margin-top: 16px;">
+                    <div v-if="activeTab === 'groupfolders' && groupFoldersAvailable && !showReasonDialog" class="form-actions">
                         <button class="button" @click="closeModal">
                             {{ t('folder_protection', 'Close') }}
                         </button>
@@ -807,9 +807,12 @@ export default {
     border-radius: var(--border-radius-large);
     max-width: 560px;
     width: 90%;
+    min-height: 560px;
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Tabs */
@@ -890,16 +893,15 @@ export default {
     white-space: nowrap;
 }
 
-/* Reason dialog (inline overlay dentro do modal) */
+/* Reason dialog (overlay fixo sobre o modal) */
 .reason-dialog-overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.45);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--border-radius-large);
-    z-index: 10;
+    z-index: 10010;
 }
 
 .reason-dialog {
@@ -954,14 +956,15 @@ export default {
     margin-top: 6px;
     padding: 6px 10px;
     font-size: 12px;
-    background: var(--color-error, #e9322d);
-    color: #fff;
+    background: #fde8e8;
+    color: #7a1515;
+    border-left: 3px solid #e9322d;
     border-radius: var(--border-radius);
     line-height: 1.4;
 }
 
 .exists-ok {
-    color: var(--color-success, #46ba61);
+    color: #2d7a3a;
     margin-left: 6px;
 }
 
@@ -1017,8 +1020,9 @@ export default {
     margin-top: 6px;
     padding: 8px 10px;
     font-size: 12px;
-    background: var(--color-warning, #eca700);
-    color: var(--color-main-background);
+    background: #fef3cd;
+    color: #6d4c00;
+    border-left: 3px solid #eca700;
     border-radius: var(--border-radius);
     line-height: 1.4;
 }
@@ -1056,6 +1060,37 @@ export default {
 
 .fp-modal-body {
     position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.fp-picker-panel,
+.fp-form-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.fp-tab-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.fp-tab-content > form {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.fp-tab-content > form > .form-actions,
+.fp-form-panel > .form-actions {
+    margin-top: auto;
+    padding-top: 12px;
 }
 
 .fp-switch-enter-active,
