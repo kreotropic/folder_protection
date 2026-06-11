@@ -62,7 +62,7 @@ class ProtectionPlugin extends ServerPlugin {
         $server->on('propPatch', [$this, 'propPatch'], 10);
         $server->on('beforeLock', [$this, 'beforeLock'], 10);
 
-        $this->logger->info('FolderProtection: WebDAV plugin initialized successfully');
+        $this->logger->debug('FolderProtection: WebDAV plugin initialized successfully');
     }
 
     private function setHeaders(string $action, string $reason): void {
@@ -89,61 +89,16 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     /**
-     * Returns all path candidates for a DAV node.
-     * Includes both the mount-point format (matches file-picker DB entries like
-     * '/files/team/subfolder') and the group folder ID format (matches admin-section
-     * DB entries like '/__groupfolders/1') so that isProtected() finds the path
-     * regardless of which format was used when the protection was stored.
-     */
-    private function resolveNodeCandidates(Node $node): array {
-        if (!method_exists($node, 'getFileInfo')) {
-            return [];
-        }
-        $fileInfo     = $node->getFileInfo();
-        $internalPath = $fileInfo->getInternalPath();
-        $candidates   = [];
-
-        // Primary: mount-point format — matches file-picker stored paths e.g. 'files/team/sub'
-        $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
-        if ($mountSuffix !== '') {
-            $suffix = ltrim($mountSuffix, '/');
-            $inner  = ltrim($internalPath, '/');
-            $candidates[] = ($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner;
-        } else {
-            $inner = ltrim($internalPath, '/');
-            if (strpos($inner, 'files/') !== 0) {
-                $candidates[] = 'files/' . $inner; // canonical /files/xxx format
-                $candidates[] = $inner;             // bare /xxx format (backward compat)
-            } else {
-                $candidates[] = $inner;                          // /files/xxx format
-                $candidates[] = substr($inner, strlen('files/')); // bare /xxx (backward compat)
-            }
-        }
-
-        // Secondary: group folder ID format — matches admin-section root entries e.g. '__groupfolders/1'
-        $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
-        if ($folderId !== null) {
-            $inner  = ltrim($internalPath, '/');
-            $idPath = '__groupfolders/' . $folderId;
-            if ($inner !== '' && $inner !== '.') {
-                $idPath .= '/' . $inner;
-            }
-            $candidates[] = $idPath;
-        }
-
-        return $candidates;
-    }
-
-    /**
      * Resolves a DAV URI to all path candidates (mount-point + group folder ID formats),
      * with URL-decoded variants of each. Falls back to URL-based patterns if the node
-     * cannot be resolved.
+     * cannot be resolved. The node-based candidate resolution lives in
+     * GroupFolderStorageTrait::getNodePathCandidates() and is shared with the other plugins.
      */
     private function getInternalPathCandidates($uri): array {
         try {
             $node = $this->server->tree->getNodeForPath($uri);
             if ($node instanceof Node) {
-                $candidates = $this->resolveNodeCandidates($node);
+                $candidates = $this->getNodePathCandidates($node);
                 if (!empty($candidates)) {
                     return $this->buildPathsToCheck($candidates);
                 }
@@ -361,7 +316,7 @@ class ProtectionPlugin extends ServerPlugin {
             $srcCandidates  = $this->getInternalPathCandidates($sourcePath);
             $destCandidates = $this->getInternalPathCandidates($destinationPath);
 
-            $this->logger->info("FolderProtection DAV: beforeCopy checking src=" . implode('|', $srcCandidates));
+            $this->logger->debug("FolderProtection DAV: beforeCopy checking src=" . implode('|', $srcCandidates));
 
             foreach ($srcCandidates as $checkSrc) {
                 $directlyProtected = $this->protectionChecker->isProtected($checkSrc);

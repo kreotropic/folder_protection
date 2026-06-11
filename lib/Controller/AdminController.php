@@ -525,8 +525,11 @@ class AdminController extends Controller {
                 return new JSONResponse(json_decode($cached, true));
             }
 
+            // This endpoint is NoAdminRequired (any logged-in user can call it for the
+            // file-list lock badges). Expose ONLY the paths — never the reason or the
+            // created_by, which would leak who protected what to every user.
             $qb = $this->db->getQueryBuilder();
-            $qb->select('path', 'reason', 'created_by')
+            $qb->select('path')
                 ->from('folder_protection');
 
             $result = $qb->executeQuery();
@@ -534,9 +537,7 @@ class AdminController extends Controller {
 
             while ($row = $result->fetchAssociative()) {
                 $protections[$row['path']] = [
-                    'protected'  => true,
-                    'reason'     => $row['reason'],
-                    'created_by' => $row['created_by'],
+                    'protected' => true,
                 ];
             }
             $result->closeCursor();

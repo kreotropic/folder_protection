@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.3.1] - 2026-06-11
+
+### Security
+- `/api/status` (`getFolderStatuses`, accessible to any logged-in user for the file-list lock badges) no longer returns the `reason` and `created_by` of protected folders — it now exposes only the paths, preventing information disclosure to non-admin users.
+
+### Fixed
+- `ProtectionChecker::normalizePath()` now collapses duplicate slashes (`/a//b` → `/a/b`), so a path entered with redundant slashes produces the same `path_hash` the DAV layer computes. Aligns PHP normalisation with the JS UI.
+- Hide the delete action in the file-list context menu for protected folders (the `hideBlockedActionsInMenu` selectors now cover delete in addition to copy).
+
+### Changed
+- **Refactor**: the near-identical DAV node→DB path resolution duplicated across `ProtectionPlugin`, `LockPlugin` and `ProtectionPropertyPlugin` is now a single shared `GroupFolderStorageTrait::getNodePathCandidates()`, removing ~120 lines and the leading-slash inconsistency between the copies.
+- Removed redundant `StorageWrapper` overrides (`__call`, `is_dir`, `file_exists`) already provided identically by the parent `Wrapper`, and dropped the stray `false` argument passed to `FolderLocked`.
+- Removed dead code: the unreachable `file_id` branch and `getSizeByFileId()` in the dashboard widget data service (the `file_id` column is never populated).
+- Lowered per-request/per-operation DAV log lines from `info` to `debug` to reduce log noise in production (block events remain `warning`; admin protect/unprotect actions remain `info`).
+
 ## [2.3.0] - 2026-05-25
 
 ### Changed
