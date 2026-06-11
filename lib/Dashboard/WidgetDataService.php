@@ -25,11 +25,14 @@ class WidgetDataService {
      *
      * @param int $limit Número máximo de entradas
      * @return array<int, array{id: int, path: string, display_name: string, reason: string|null, created_by: string|null, created_at: int, size: int, is_group_folder: bool, group_folder_id: int|null}>
+     *
+     * Nota: a coluna file_id existe no schema mas nunca é preenchida (protect() não a grava),
+     * por isso o tamanho é sempre resolvido via path (getSizeByPath) ou group folder.
      */
     public function getProtectedFolders(int $limit = 10): array {
         // 1. Buscar pastas protegidas
         $qb = $this->db->getQueryBuilder();
-        $qb->select('id', 'path', 'file_id', 'user_id', 'reason', 'created_by', 'created_at')
+        $qb->select('id', 'path', 'user_id', 'reason', 'created_by', 'created_at')
            ->from('folder_protection')
            ->orderBy('created_at', 'DESC')
            ->setMaxResults($limit);
@@ -45,7 +48,6 @@ class WidgetDataService {
         $folders = [];
         foreach ($rows as $row) {
             $path     = (string) $row['path'];
-            $fileId   = $row['file_id'] !== null ? (int) $row['file_id'] : null;
             $userId   = $row['user_id'] ?: null;
             $isGroup  = str_starts_with($path, '/__groupfolders/');
             $groupId  = null;
@@ -56,9 +58,6 @@ class WidgetDataService {
                 $groupId = isset($parts[1]) && is_numeric($parts[1]) ? (int) $parts[1] : null;
                 $size    = $groupId !== null ? $this->getGroupFolderSize($groupId) : -1;
                 $displayName = $this->getGroupFolderName($groupId) ?? $path;
-            } elseif ($fileId !== null) {
-                $size        = $this->getSizeByFileId($fileId);
-                $displayName = $this->getDisplayName($path);
             } else {
                 $size        = $this->getSizeByPath($path, $userId);
                 $displayName = $this->getDisplayName($path);
@@ -78,30 +77,6 @@ class WidgetDataService {
         }
 
         return $folders;
-    }
-
-    /**
-     * Obtém o tamanho de uma pasta a partir do file_id via oc_filecache.
-     */
-    private function getSizeByFileId(int $fileId): int {
-        try {
-            $qb = $this->db->getQueryBuilder();
-            $qb->select('size')
-               ->from('filecache')
-               ->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId)));
-
-            $result = $qb->executeQuery();
-            $row    = $result->fetchAssociative();
-            $result->closeCursor();
-
-            return $row ? (int) $row['size'] : -1;
-        } catch (\Throwable $e) {
-            $this->logger->warning('FolderProtection widget: failed to get size by file_id', [
-                'file_id'   => $fileId,
-                'exception' => $e->getMessage(),
-            ]);
-            return -1;
-        }
     }
 
     /**

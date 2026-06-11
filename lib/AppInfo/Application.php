@@ -195,7 +195,7 @@ class Application extends App implements IBootstrap {
      */
     public function boot(IBootContext $context): void {
         $logger = $context->getServerContainer()->get(LoggerInterface::class);
-        $logger->info('FolderProtection: Application boot completed', ['app' => self::APP_ID]);
+        $logger->debug('FolderProtection: Application boot completed', ['app' => self::APP_ID]);
         
         // ✅ Carregar script SEMPRE (não apenas em Files)
         \OCP\Util::addScript(self::APP_ID, 'folder-protection-ui');
@@ -222,7 +222,7 @@ class Application extends App implements IBootstrap {
             // Adiciona wrapper com prioridade negativa (prioritário)
             Filesystem::addStorageWrapper('folder_protection', [$this, 'addStorageWrapperCallback'], self::STORAGE_WRAPPER_PRIORITY);
             self::$wrapperRegistered = true;
-            $logger->info('FolderProtection: StorageWrapper registered', ['priority' => self::STORAGE_WRAPPER_PRIORITY]);
+            $logger->debug('FolderProtection: StorageWrapper registered', ['priority' => self::STORAGE_WRAPPER_PRIORITY]);
         } catch (\Throwable $e) {
             // Nunca deixar o hook causar uma falha global; logar o erro
             $logger->error('FolderProtection: Failed to add StorageWrapper', ['exception' => $e]);

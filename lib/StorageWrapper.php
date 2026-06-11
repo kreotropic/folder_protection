@@ -79,10 +79,6 @@ class StorageWrapper extends Wrapper {
         $this->notificationService->notifyBlocked($path, $action);
     }
 
-    public function __call($method, $args) {
-        return call_user_func_array([$this->storage, $method], $args);
-    }
-
     // Explicitly implement trash-control methods to avoid __call forwarding
     // these to Local (which has no such methods) and crashing with a TypeError.
     // We propagate down the chain via try-catch so intermediate Wrapper layers
@@ -102,10 +98,6 @@ class StorageWrapper extends Wrapper {
         } catch (\Throwable $e) {
             // Local storage has no trash concept — ignore silently.
         }
-    }
-
-    public function is_dir($path): bool {
-        return $this->storage->is_dir($path);
     }
 
     public function isDeletable($path): bool {
@@ -129,7 +121,7 @@ class StorageWrapper extends Wrapper {
         // protected folder (e.g. sync temp-file pattern) must remain allowed.
         if ($this->isProtectedAny($srcPath) && !$this->isProtectedAny($tgtPath)) {
             $this->sendProtectionNotification($srcPath, 'copy');
-            throw new FolderLocked('This folder is protected and cannot be copied.', false);
+            throw new FolderLocked('This folder is protected and cannot be copied.');
         }
         return $this->storage->copy($source, $target);
     }
@@ -162,11 +154,11 @@ class StorageWrapper extends Wrapper {
     public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
         if (!empty($sourceInternalPath) && $this->isProtectedAny($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'copy');
-            throw new FolderLocked('This folder is protected and cannot be copied.', false);
+            throw new FolderLocked('This folder is protected and cannot be copied.');
         }
 
         if ($this->protectionChecker->isProtected($targetInternalPath)) {
-            throw new FolderLocked('Cannot copy into protected folders.', false);
+            throw new FolderLocked('Cannot copy into protected folders.');
         }
 
         return parent::copyFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
@@ -175,10 +167,10 @@ class StorageWrapper extends Wrapper {
     public function moveFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
         if ($this->isProtectedAny($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'move');
-            throw new FolderLocked('This folder is protected and cannot be moved.', false);
+            throw new FolderLocked('This folder is protected and cannot be moved.');
         }
         if ($this->protectionChecker->isProtected($targetInternalPath)) {
-            throw new FolderLocked('Cannot move to a protected folder path.', false);
+            throw new FolderLocked('Cannot move to a protected folder path.');
         }
         return parent::moveFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
     }
@@ -201,14 +193,10 @@ class StorageWrapper extends Wrapper {
         return $this->storage->getPermissions($path);
     }
 
-    public function file_exists($path): bool {
-        return $this->storage->file_exists($path);
-    }
-
     public function mkdir(string $path): bool {
         if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             $this->sendProtectionNotification($path, 'create');
-            throw new FolderLocked('Cannot create directory: target is protected or inside a protected folder.', false);
+            throw new FolderLocked('Cannot create directory: target is protected or inside a protected folder.');
         }
         return $this->storage->mkdir($path);
     }

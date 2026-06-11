@@ -99,6 +99,14 @@ class ProtectionCheckerTest extends TestCase {
         $this->assertSame($path, $checker->normalizePath($checker->normalizePath($path)));
     }
 
+    public function testNormalizeCollapsesDuplicateSlashes(): void {
+        $checker = $this->checkerWithRows([]);
+        // '/a//b' must hash the same as '/a/b' (the DAV layer only ever sees clean paths)
+        $this->assertSame('/files/a/b', $checker->normalizePath('/files//a///b'));
+        $this->assertSame('/files/folder', $checker->normalizePath('files//folder//'));
+        $this->assertSame('/', $checker->normalizePath('///'));
+    }
+
     // -------------------------------------------------------------------------
     // isProtected — cache behaviour
     // -------------------------------------------------------------------------

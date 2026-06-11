@@ -51,7 +51,7 @@ class LockPlugin extends ServerPlugin {
         // Handler para PROPFIND - reportar locks nas propriedades
         $server->on('propFind', [$this, 'propFind']);
         
-        $this->logger->info('FolderProtection: Lock plugin initialized');
+        $this->logger->debug('FolderProtection: Lock plugin initialized');
     }
 
     /**
@@ -122,58 +122,8 @@ class LockPlugin extends ServerPlugin {
     }
 
     /**
-     * Returns all path candidates for a node.
-     * Checks both mount-point format ('/files/team/sub') and group folder ID format
-     * ('/__groupfolders/1/sub') to match any DB storage format.
-     */
-    private function getNodePathCandidates(\Sabre\DAV\INode $node): array {
-        try {
-            if (!method_exists($node, 'getFileInfo')) {
-                return [];
-            }
-            $fileInfo     = $node->getFileInfo();
-            $internalPath = $fileInfo->getInternalPath();
-            $candidates   = [];
-
-            // Primary: mount-point format — matches file-picker stored paths
-            $mountSuffix = preg_replace('#^/[^/]+#', '', rtrim($fileInfo->getMountPoint()->getMountPoint(), '/'));
-            if ($mountSuffix !== '') {
-                $suffix = ltrim($mountSuffix, '/');
-                $inner  = ltrim($internalPath, '/');
-                $candidates[] = '/' . (($inner === '' || $inner === '.') ? $suffix : $suffix . '/' . $inner);
-            } else {
-                $inner = ltrim($internalPath, '/');
-                if (strpos($inner, 'files/') !== 0) {
-                    $candidates[] = '/' . 'files/' . $inner; // canonical /files/xxx format
-                    $candidates[] = '/' . $inner;            // bare /xxx format (backward compat)
-                } else {
-                    $candidates[] = '/' . $inner;                          // /files/xxx format
-                    $candidates[] = '/' . substr($inner, strlen('files/')); // bare /xxx (backward compat)
-                }
-            }
-
-            // Secondary: group folder ID format — matches admin-section root entries
-            $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
-            if ($folderId !== null) {
-                $inner  = ltrim($internalPath, '/');
-                $idPath = '/__groupfolders/' . $folderId;
-                if ($inner !== '' && $inner !== '.') {
-                    $idPath .= '/' . $inner;
-                }
-                $candidates[] = $idPath;
-            }
-
-            return $candidates;
-        } catch (\Exception $e) {
-            $this->logger->error('FolderProtection Lock: Error getting node path', [
-                'error' => $e->getMessage()
-            ]);
-            return [];
-        }
-    }
-
-    /**
      * Resolves a URI to all path candidates (both formats), with fallback.
+     * Node-based resolution is shared via GroupFolderStorageTrait::getNodePathCandidates().
      */
     private function getInternalPathCandidates(string $uri): array {
         try {

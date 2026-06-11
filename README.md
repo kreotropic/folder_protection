@@ -101,9 +101,51 @@ Contributions for additional languages are welcome — add a `l10n/<locale>.json
 
 AGPL-3.0
 
+## Development
+
+### Tests
+
+Development dependencies (PHPUnit) are not shipped — install them first:
+
+```bash
+composer install
+```
+
+Tests must run **inside the Nextcloud environment** (the `OCP\` namespace is provided by the server's autoloaders), e.g. inside your Nextcloud container or on the host where Nextcloud is installed.
+
+```bash
+# Unit tests (no running server required)
+vendor/bin/phpunit -c phpunit.xml
+
+# Integration tests — drive real WebDAV operations against a running server.
+# Provide the target server and an admin account via environment variables:
+FP_TEST_BASE_URL=http://localhost \
+FP_TEST_USER=admin \
+FP_TEST_PASSWORD=your-admin-password \
+  vendor/bin/phpunit -c phpunit.integration.xml
+```
+
+Integration tests are skipped automatically if `FP_TEST_PASSWORD` is not set. They
+create and clean up their own folders/protections, but expect a `team` group folder
+and an `exttest` external storage to exist for the group-folder/external-storage cases.
+
+### Frontend build
+
+Compiled JavaScript is committed to the repository, so a build is only needed when you
+change the Vue/JS sources under `src/`:
+
+```bash
+npm install
+npm run build      # production build
+npm run dev        # watch mode
+```
+
+> Note: `js/folder-protection-ui.js` is shipped as-is (not produced by webpack) — edit it directly.
+
 ## Contributing
 
 Pull requests welcome! Please open an issue first to discuss significant changes.
+See [Development](#development) above for how to run the tests.
 
 ## Screenshots
 

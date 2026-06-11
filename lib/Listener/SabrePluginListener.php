@@ -33,7 +33,7 @@ class SabrePluginListener implements IEventListener {
         if (!($event instanceof SabrePluginAuthInitEvent)) {
             return;
         }
-        $this->logger->info('FolderProtection: SabrePluginAuthInitEvent received, adding WebDAV plugins');
+        $this->logger->debug('FolderProtection: SabrePluginAuthInitEvent received, adding WebDAV plugins');
 
         try {
             $server = $event->getServer();
@@ -46,7 +46,7 @@ class SabrePluginListener implements IEventListener {
             $server->addPlugin($this->protectionPlugin);
             $server->addPlugin($this->propertyPlugin);
 
-            $this->logger->info('FolderProtection: All WebDAV plugins added successfully (Lock + Protection + Properties)');
+            $this->logger->debug('FolderProtection: All WebDAV plugins added successfully (Lock + Protection + Properties)');
         } catch (\Exception $e) {
             $this->logger->error('FolderProtection: Failed to add WebDAV plugins', [
                 'exception' => $e->getMessage(),

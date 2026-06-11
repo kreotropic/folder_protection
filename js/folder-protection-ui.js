@@ -356,9 +356,6 @@
             }
         },
 
-        // Alias para compatibilidade com código existente
-        hideCopyInMenu(menu) { this.hideBlockedActionsInMenu(menu); },
-
         /**
          * Process a single row: always clean and re-evaluate.
          * This is critical because Nextcloud's virtual scrolling recycles

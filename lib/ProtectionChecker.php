@@ -146,7 +146,12 @@ class ProtectionChecker {
      * Ex: "" -> "/", "foo/bar" -> "/foo/bar"
      */
     public function normalizePath(string $path): string {
-        $trimmed = trim($path, '/');
+        // Colapsa barras duplicadas para que '/a//b' e '/a/b' produzam o mesmo
+        // path_hash. Sem isto, um path com '//' introduzido pelo admin geraria um
+        // hash que a camada DAV (que vê paths internos já limpos) nunca corresponde.
+        // Alinhado com a normalização do lado JS (folder-protection-ui.js).
+        $collapsed = preg_replace('#/+#', '/', $path);
+        $trimmed = trim($collapsed, '/');
         if ($trimmed === '') {
             return '/';
         }
