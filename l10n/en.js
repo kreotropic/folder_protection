@@ -68,6 +68,17 @@ OC.L10N.register(
     "Reason updated successfully" : "Reason updated successfully",
     "Failed to update reason" : "Failed to update reason",
     "Protected by {user}" : "Protected by {user}",
-    "Manage protections" : "Manage protections"
+    "Manage protections" : "Manage protections",
+    "Group Folder" : "Group Folder",
+    "Browse folders" : "Browse folders",
+    "Protection added" : "Protection added",
+    "Error adding protection" : "Error adding protection",
+    "Loading..." : "Loading...",
+    "No folders found." : "No folders found.",
+    "Collapse" : "Collapse",
+    "Expand" : "Expand",
+    "Already protected" : "Already protected",
+    "Protect ({n})" : "Protect ({n})",
+    "Could not load folders." : "Could not load folders."
 },
 "nplurals=2; plural=(n != 1);");

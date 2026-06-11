@@ -21,7 +21,9 @@
 
     <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Admin_Interface.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Add_Protection_Interface.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Folder_Picker.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Protected_Folder.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Widget.png</screenshot>
 
     <commands>
         <command>OCA\FolderProtection\Command\ListProtected</command>

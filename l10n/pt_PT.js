@@ -68,6 +68,17 @@ OC.L10N.register(
     "Reason updated successfully" : "Motivo atualizado com sucesso",
     "Failed to update reason" : "Falha ao atualizar o motivo",
     "Protected by {user}" : "Protegida por {user}",
-    "Manage protections" : "Gerir proteções"
+    "Manage protections" : "Gerir proteções",
+    "Group Folder" : "Pasta de Grupo",
+    "Browse folders" : "Navegar pastas",
+    "Protection added" : "Proteção adicionada",
+    "Error adding protection" : "Erro ao adicionar proteção",
+    "Loading..." : "A carregar...",
+    "No folders found." : "Nenhuma pasta encontrada.",
+    "Collapse" : "Recolher",
+    "Expand" : "Expandir",
+    "Already protected" : "Já protegida",
+    "Protect ({n})" : "Proteger ({n})",
+    "Could not load folders." : "Não foi possível carregar as pastas."
 },
 "nplurals=2; plural=(n != 1);");
