@@ -48,8 +48,11 @@ class ProtectedFoldersWidget implements IAPIWidget {
     }
 
     /**
-     * Sem componente Vue personalizado — usamos a renderização padrão
-     * do Nextcloud com os items de getItems().
+     * Carrega o componente Vue personalizado do widget (src/dashboard.js),
+     * que se regista via OCA.Dashboard.register() e renderiza a lista com
+     * mais detalhe do que o WidgetItem nativo (autor, motivo, estado vazio,
+     * rodapé "Manage protections"). A renderização nativa via getItems()
+     * continua a servir os clientes de API/mobile do Dashboard.
      */
     public function load(): void {
         \OCP\Util::addScript('folder_protection', 'dashboard');

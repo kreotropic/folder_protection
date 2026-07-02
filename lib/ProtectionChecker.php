@@ -199,16 +199,29 @@ class ProtectionChecker {
      * Ex: se '/files/A/B/C' está protegido, hasProtectedDescendant('/files/A') → true
      */
     public function hasProtectedDescendant(string $path): bool {
-        $path = $this->normalizePath($path);
-        $prefix = rtrim($path, '/') . '/';
+        $normalizedPath = $this->normalizePath($path);
 
-        foreach ($this->getProtectedFolders() as $protectedPath) {
-            $normalized = $this->normalizePath($protectedPath);
-            if (str_starts_with($normalized, $prefix)) {
-                return true;
-            }
+        // Se o caminho for a raiz, qualquer proteção existente é uma descendente.
+        if ($normalizedPath === '/') {
+            return !empty($this->getProtectedFolders());
         }
-        return false;
+
+        // Escapa wildcards do LIKE ('_' e '%') no path antes de acrescentar o '%'
+        // final. Sem isto, um nome de pasta com '_' (muito comum) seria interpretado
+        // como "qualquer caracter" e produziria falsos positivos — bloqueando
+        // operações sobre pastas que não têm descendentes protegidos.
+        $prefix = $this->db->escapeLikeParameter(rtrim($normalizedPath, '/') . '/') . '%';
+
+        $qb = $this->db->getQueryBuilder();
+        $qb->select($qb->func()->count('*'))
+            ->from('folder_protection')
+            ->where($qb->expr()->like('path', $qb->createNamedParameter($prefix)));
+
+        $result = $qb->executeQuery();
+        $count = (int) $result->fetchOne();
+        $result->closeCursor();
+
+        return $count > 0;
     }
 
     /**

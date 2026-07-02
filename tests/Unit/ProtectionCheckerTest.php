@@ -9,6 +9,7 @@ use OCP\ICacheFactory;
 use OCP\DB\IResult;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\DB\QueryBuilder\IExpressionBuilder;
+use OCP\DB\QueryBuilder\IFunctionBuilder;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\MockObject\MockObject;
 
@@ -233,20 +234,67 @@ class ProtectionCheckerTest extends TestCase {
     // hasProtectedDescendant
     // -------------------------------------------------------------------------
 
+    /**
+     * Build an IDBConnection mock for hasProtectedDescendant: the COUNT(*) query
+     * returns $count via fetchOne(), and escapeLikeParameter() is a pass-through.
+     */
+    private function dbForDescendantCount(int $count): IDBConnection&MockObject {
+        $db = $this->createMock(IDBConnection::class);
+        $db->method('escapeLikeParameter')->willReturnArgument(0);
+        $db->method('getQueryBuilder')->willReturnCallback(function () use ($count) {
+            $result = $this->createMock(IResult::class);
+            $result->method('fetchOne')->willReturn($count);
+            $result->method('closeCursor')->willReturn(true);
+
+            $func = $this->createMock(IFunctionBuilder::class);
+            $func->method('count')->willReturn($this->createMock(\OCP\DB\QueryBuilder\IQueryFunction::class));
+
+            $expr = $this->createMock(IExpressionBuilder::class);
+            $expr->method('like')->willReturn('1=1');
+
+            $qb = $this->createMock(IQueryBuilder::class);
+            $qb->method('select')->willReturnSelf();
+            $qb->method('from')->willReturnSelf();
+            $qb->method('where')->willReturnSelf();
+            $qb->method('createNamedParameter')->willReturnArgument(0);
+            $qb->method('func')->willReturn($func);
+            $qb->method('expr')->willReturn($expr);
+            $qb->method('executeQuery')->willReturn($result);
+            return $qb;
+        });
+        return $db;
+    }
+
     public function testHasProtectedDescendant_True(): void {
-        $this->cache->set('all_protected_folders', json_encode(['/files/A/B/C']));
-        $db      = $this->createMock(IDBConnection::class);
-        $checker = new ProtectionChecker($db, $this->cacheFactory);
+        // DB reports a matching descendant (COUNT = 1)
+        $checker = new ProtectionChecker($this->dbForDescendantCount(1), $this->cacheFactory);
         $this->assertTrue($checker->hasProtectedDescendant('/files/A'));
         $this->assertTrue($checker->hasProtectedDescendant('/files/A/B'));
     }
 
     public function testHasProtectedDescendant_False(): void {
-        $this->cache->set('all_protected_folders', json_encode(['/files/A/B/C']));
-        $db      = $this->createMock(IDBConnection::class);
-        $checker = new ProtectionChecker($db, $this->cacheFactory);
-        $this->assertFalse($checker->hasProtectedDescendant('/files/A/B/C')); // exact, not descendant
+        // DB reports no descendants (COUNT = 0)
+        $checker = new ProtectionChecker($this->dbForDescendantCount(0), $this->cacheFactory);
+        $this->assertFalse($checker->hasProtectedDescendant('/files/A/B/C'));
         $this->assertFalse($checker->hasProtectedDescendant('/files/X'));
+    }
+
+    public function testHasProtectedDescendant_RootUsesCachedList(): void {
+        // For the root path, any existing protection counts as a descendant and the
+        // method short-circuits on the cached list WITHOUT hitting the DB.
+        $this->cache->set('all_protected_folders', json_encode(['/files/A']));
+        $db = $this->createMock(IDBConnection::class);
+        $db->expects($this->never())->method('getQueryBuilder');
+
+        $checker = new ProtectionChecker($db, $this->cacheFactory);
+        $this->assertTrue($checker->hasProtectedDescendant('/'));
+    }
+
+    public function testHasProtectedDescendant_RootEmpty(): void {
+        $this->cache->set('all_protected_folders', json_encode([]));
+        $db = $this->createMock(IDBConnection::class);
+        $checker = new ProtectionChecker($db, $this->cacheFactory);
+        $this->assertFalse($checker->hasProtectedDescendant('/'));
     }
 
     // -------------------------------------------------------------------------
