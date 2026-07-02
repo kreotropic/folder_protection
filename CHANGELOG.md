@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.2] - 2026-07-02
+
+### Fixed
+- `ProtectionChecker::hasProtectedDescendant()` now escapes LIKE wildcards (`_`, `%`) in the folder path before running the descendant lookup. Folder names commonly contain `_`, which LIKE treats as "any single character" — this produced false positives that could wrongly block delete/move/copy operations on folders with no protected descendants.
+
+### Changed
+- Corrected the misleading comment on `ProtectedFoldersWidget::load()` (it claimed there was no custom Vue widget while loading exactly that script; the Vue component provides the richer dashboard rendering, while `getItems()` still serves API/mobile clients).
+
 ## [2.3.1] - 2026-06-11
 
 ### Security
