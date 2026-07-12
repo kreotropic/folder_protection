@@ -32,7 +32,7 @@ class ProtectionCheckerTest extends TestCase {
      * Build a ProtectionChecker backed by a DB that returns $rows for every
      * executeQuery() call (used for getProtectedFolders / checkDatabaseExact).
      *
-     * @param array<array<string,mixed>> $rows  Rows returned by fetchAssociative()
+     * @param array<array<string,mixed>> $rows  Rows returned by fetch()
      */
     private function checkerWithRows(array $rows): ProtectionChecker {
         $db = $this->dbReturning($rows);
@@ -51,9 +51,9 @@ class ProtectionCheckerTest extends TestCase {
             $result = $this->createMock(IResult::class);
             if (empty($rows)) {
                 // Always return false — handles unlimited queries safely
-                $result->method('fetchAssociative')->willReturn(false);
+                $result->method('fetch')->willReturn(false);
             } else {
-                $result->method('fetchAssociative')
+                $result->method('fetch')
                        ->willReturnOnConsecutiveCalls(...array_merge($rows, [false]));
             }
             $result->method('closeCursor')->willReturn(true);
@@ -168,7 +168,7 @@ class ProtectionCheckerTest extends TestCase {
         $callCount = 0;
 
         $result = $this->createMock(IResult::class);
-        $result->method('fetchAssociative')->willReturnCallback(function () use (&$callCount) {
+        $result->method('fetch')->willReturnCallback(function () use (&$callCount) {
             $callCount++;
             return false; // not protected
         });

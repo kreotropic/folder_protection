@@ -39,7 +39,7 @@ class WidgetDataService {
 
         $result = $qb->executeQuery();
         $rows = [];
-        while ($row = $result->fetchAssociative()) {
+        while ($row = $result->fetch()) {
             $rows[] = $row;
         }
         $result->closeCursor();
@@ -101,7 +101,7 @@ class WidgetDataService {
                ->setMaxResults(1);
 
             $result = $qb->executeQuery();
-            $row    = $result->fetchAssociative();
+            $row    = $result->fetch();
             $result->closeCursor();
 
             // size = 0 é válido (pasta vazia); -1 = não encontrado
@@ -126,7 +126,7 @@ class WidgetDataService {
                ->where($qb->expr()->eq('folder_id', $qb->createNamedParameter($groupFolderId)));
 
             $result = $qb->executeQuery();
-            $row    = $result->fetchAssociative();
+            $row    = $result->fetch();
             $result->closeCursor();
 
             return $row ? (string) $row['mount_point'] : null;
@@ -162,7 +162,7 @@ class WidgetDataService {
                ->setMaxResults(1);
 
             $result = $qb->executeQuery();
-            $row    = $result->fetchAssociative();
+            $row    = $result->fetch();
             $result->closeCursor();
 
             if (!$row) {
@@ -179,7 +179,7 @@ class WidgetDataService {
                 ->setMaxResults(1);
 
             $result2 = $qb2->executeQuery();
-            $row2    = $result2->fetchAssociative();
+            $row2    = $result2->fetch();
             $result2->closeCursor();
 
             return $row2 ? (int) $row2['size'] : -1;
