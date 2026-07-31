@@ -58,6 +58,11 @@ class Protect extends Command {
                ]);
             $qb->executeStatement();
 
+            // Without this the protection has no effect until the cached negative
+            // result expires (isProtected() caches for 300s, and any prior PROPFIND
+            // or MKCOL on the path will have populated it with "not protected").
+            $this->protectionChecker->clearCacheForPath($path);
+
             $output->writeln(sprintf('<info>✓ Successfully protected folder: %s</info>', $path));
             if ($reason) {
                 $output->writeln(sprintf('  Reason: %s', $reason));

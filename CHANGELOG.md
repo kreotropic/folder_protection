@@ -1,5 +1,73 @@
 # Changelog
 
+## [2.4.0] - 2026-07-31
+
+### Fixed
+- **Notifications never reached the user.** The notifier was declared only through an
+  `<notifications><notifier>` block in `appinfo/info.xml`. That element is not read by the
+  server and does not exist in the App Store `info.xsd` — no core app uses it; they all call
+  `registerNotifierService()`. The notifier was therefore absent from
+  `RegistrationContext::getNotifierServices()`, so every "action blocked" notification was
+  created and then discarded in `Notification\Manager::prepare()`. `Application::register()`
+  now calls `$context->registerNotifierService()`.
+
+- **`occ folder-protection:protect` had no effect for up to 300 seconds.** The command
+  inserted the row and returned success, but never invalidated the protection cache the
+  way `AdminController::protect()` does. `isProtected()` caches negative results for 300s,
+  and any earlier PROPFIND or MKCOL on the path will have populated it — so a folder
+  protected from the CLI could still be deleted or moved straight afterwards. Both
+  `Protect` and `Unprotect` now call `clearCacheForPath()`. Found by testing on NC 34;
+  it affected NC 33 identically.
+
+  Note the fix only holds where `memcache.distributed` is configured (Redis or similar).
+  Falling back to APCu means the CLI and Apache have *separate* caches and no
+  invalidation from a command can reach the web process — see `build/README.md`.
+
+- **`occ folder-protection:unprotect` was unusable from a script.** Its confirmation prompt
+  resolves to its default under `-n`/`--no-interaction`, and that default is "no" — so the
+  command printed `Cancelled.` and exited 0, reporting success while having done nothing.
+  It now takes `--force` to confirm non-interactively, and refuses with exit code 1 rather
+  than pretending to have run. Piping an answer (`echo y | occ …`) still works.
+
+### Security
+- Removed `#[NoCSRFRequired]` from the state-changing POST endpoints (`protect`, `unprotect`,
+  `updateReason`, `clearCache`). The attribute disables the CSRF check for *all* HTTP methods,
+  so an authenticated admin visiting a malicious page could have folders protected or
+  unprotected cross-site. Read-only GETs keep the attribute. The frontend uses
+  `@nextcloud/axios`, which sends the request token automatically.
+- Removed the `#[AdminRequired]` attribute and its import. **No such attribute exists in
+  Nextcloud** (only `NoAdminRequired` and `SubAdminRequired`); it was silently inert. The
+  endpoints were in fact protected, because admin-only is the default in
+  `SecurityMiddleware::checkSecurity` — but the attribute suggested a guarantee it never
+  provided, and the `use` statement pointed at a non-existent class.
+
+### Changed
+- **Nextcloud 34 compatibility**: `max-version` raised to 34, `min-version` to 33, and the
+  PHP requirement to 8.3 (NC 34 requires 8.3+; 8.2 is deprecated).
+- Removed the `<dav><properties>` and `<notifications>` blocks from `info.xml`. Neither is a
+  valid element in the App Store schema and neither is parsed by the server; both would fail
+  XSD validation on upload. The DAV properties are registered by `DAV\ProtectionPropertyPlugin`.
+- `folder-protection-ui.js` is now bundled by webpack from `src/` and imports `generateUrl`
+  from `@nextcloud/router` instead of using the deprecated `OC.generateUrl` global.
+- `AdminApp.vue` uses `translate` from `@nextcloud/l10n` instead of the deprecated
+  `OC.L10N.translate` global.
+- Aligned `package.json` with its declared dependency versions (`@nextcloud/l10n` was pinned at
+  1.6.0 on disk while the manifest asked for ^3.4.1) and with the `info.xml` version number.
+- Reordered `info.xml`: its elements are an `xs:sequence`, and `<dependencies>` sat before
+  `<website>` while `<admin>` sat after `<admin-section>`. Both violated the schema, so the
+  file had never validated and the app could not have been uploaded to the App Store.
+- Added `build/docker-compose.nc34.yml` and `build/README.md` — a disposable NC 34 instance
+  (port 8085) that verifies the declared `max-version` instead of assuming it. Verified there:
+  23/23 unit and 14/14 integration on NC 34.0.2 / PHP 8.5.8.
+- Dropped the deprecated `curl_close()` from the integration tests; PHP 8.5, which NC 34
+  ships, warns on it and it has been a no-op since 8.0.
+
+### Note
+- The 2.3.0 entry below claims `IResult::fetch()` was "removed in NC33". That is incorrect —
+  `fetch()` is `@since 21.0.0` and is still present in NC 33 and 34, carrying only a `@note`
+  recommending `fetchAssociative()`/`fetchNumeric()`. It is not deprecated. Conversely,
+  `fetchAssociative()` is `@since 33.0.0` and does **not** exist in NC 32 or earlier.
+
 ## [2.3.2] - 2026-07-02
 
 ### Fixed

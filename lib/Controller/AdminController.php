@@ -6,7 +6,6 @@ namespace OCA\FolderProtection\Controller;
 use OCA\FolderProtection\ProtectionChecker;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
-use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
@@ -18,6 +17,19 @@ use OCP\ICacheFactory;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Endpoints de administração da app.
+ *
+ * Segurança: no Nextcloud o comportamento por omissão de um método de controller é
+ * "admin required" (SecurityMiddleware::checkSecurity). Não existe nenhum atributo
+ * OCP\AppFramework\Http\Attribute\AdminRequired — apenas NoAdminRequired e
+ * SubAdminRequired. Por isso os métodos restritos a admin não levam atributo nenhum;
+ * só os que abrem acesso a utilizadores normais levam #[NoAdminRequired].
+ *
+ * #[NoCSRFRequired] só é usado em GETs read-only. Os POSTs que alteram estado
+ * (protect/unprotect/updateReason/clearCache) mantêm a verificação CSRF activa —
+ * o frontend usa @nextcloud/axios, que envia o requesttoken automaticamente.
+ */
 class AdminController extends Controller {
 
     private IDBConnection $db;
@@ -52,7 +64,6 @@ class AdminController extends Controller {
     /**
      * List all protected folders (admin only)
      */
-    #[AdminRequired]
     #[NoCSRFRequired]
     public function list(): JSONResponse {
         try {
@@ -107,8 +118,6 @@ class AdminController extends Controller {
     /**
      * Protect a folder (admin only)
      */
-    #[AdminRequired]
-    #[NoCSRFRequired]
     public function protect(string $path, ?string $reason = null): JSONResponse {
         try {
             $path = $this->protectionChecker->normalizePath($path);
@@ -163,8 +172,6 @@ class AdminController extends Controller {
     /**
      * Unprotect a folder (admin only)
      */
-    #[AdminRequired]
-    #[NoCSRFRequired]
     public function unprotect(int $id): JSONResponse {
         try {
             // Busca o path antes de apagar para poder invalidar a cache específica
@@ -237,8 +244,6 @@ class AdminController extends Controller {
     /**
      * Clear protection cache (admin only)
      */
-    #[AdminRequired]
-    #[NoCSRFRequired]
     public function clearCache(): JSONResponse {
         try {
             $this->clearCacheInternal();
@@ -259,7 +264,6 @@ class AdminController extends Controller {
     /**
      * List all group folders with their protection status (admin only)
      */
-    #[AdminRequired]
     #[NoCSRFRequired]
     public function listGroupFolders(): JSONResponse {
         try {
@@ -352,8 +356,6 @@ class AdminController extends Controller {
     /**
      * Update the reason for an existing protection (admin only)
      */
-    #[AdminRequired]
-    #[NoCSRFRequired]
     public function updateReason(int $id, ?string $reason = null): JSONResponse {
         try {
             // Fetch path first so we can invalidate the exact cache entry after update
@@ -411,7 +413,6 @@ class AdminController extends Controller {
      * Checks against the currently logged-in admin's user folder.
      * Group folder paths (/__groupfolders/...) are always reported as existing.
      */
-    #[AdminRequired]
     #[NoCSRFRequired]
     public function checkExists(string $path): JSONResponse {
         try {
@@ -453,7 +454,6 @@ class AdminController extends Controller {
      * List immediate subfolders of a given path for the folder tree picker.
      * Returns folder names, their DB path, protection status, and whether they have children.
      */
-    #[AdminRequired]
     #[NoCSRFRequired]
     public function browse(string $path = '/'): JSONResponse {
         $userId = $this->userSession->getUser()?->getUID();

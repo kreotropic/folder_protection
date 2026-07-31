@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 Ricardo Ferreira <rsfneg@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Disposable Nextcloud 34 instance used to verify the app against the version
+# declared in appinfo/info.xml <max-version>. Same pattern as the cross-engine
+# instances in share_audit_dashboard/build: its own project name, containers,
+# port and volumes, so it cannot disturb the NC 33 development instance on 8080.
+#
+#   docker compose -p folderprot-nc34 -f build/docker-compose.nc34.yml up -d
+#   docker compose -p folderprot-nc34 -f build/docker-compose.nc34.yml down -v
+#
+# The -v on teardown matters: without it the volumes survive and the next up
+# resumes the old instance instead of building a clean one. See build/README.md.
+services:
+  db:
+    image: mariadb:10.11
+    container_name: folderprot-nc34-db
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    volumes:
+      - db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=nextcloud
+      - MYSQL_PASSWORD=nextcloud
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+
+  # Redis matters here, not just for speed: ProtectionChecker uses
+  # ICacheFactory::createDistributed(). Without a distributed backend that falls
+  # back to APCu, which is NOT shared between the CLI and Apache — so cache
+  # invalidation from an occ command cannot reach the web process, and a
+  # protection added by CLI appears to do nothing for up to 300s. The dev
+  # instance on 8080 has Redis; mirror it so results are comparable.
+  redis:
+    image: redis:alpine
+    container_name: folderprot-nc34-redis
+    restart: unless-stopped
+
+  app:
+    image: nextcloud:34-apache
+    container_name: folderprot-nc34-app
+    restart: unless-stopped
+    ports:
+      - 8085:80
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - nextcloud:/var/www/html
+      # The whole apps/ tree, not just this app: the integration tests exercise
+      # protected subfolders inside a group folder, which needs groupfolders.
+      - ../..:/var/www/html/custom_apps
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=nextcloud
+      - REDIS_HOST=redis
+      - NEXTCLOUD_ADMIN_USER=ncadmin
+      - NEXTCLOUD_ADMIN_PASSWORD=folderprot-nc34-verify
+      - NEXTCLOUD_TRUSTED_DOMAINS=localhost
+
+volumes:
+  db:
+  nextcloud:

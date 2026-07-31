@@ -1,20 +1,29 @@
 <?xml version="1.0"?>
 <info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <!--
+        A ordem dos elementos é significativa: o info.xsd define um xs:sequence,
+        por isso trocar elementos de sítio faz falhar a validação no upload para
+        a App Store. Ordem: id, name, summary, description, version, licence,
+        author, namespace, types, documentation, category, website, discussion,
+        bugs, repository, screenshot, donation, dependencies, ..., commands,
+        settings, activity, dashboard, ...
+    -->
     <id>folder_protection</id>
     <name>Folder Protection</name>
     <summary>Protect folders from being moved, copied, or deleted</summary>
     <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
-    <version>2.3.2</version>
+    <version>2.4.0</version>
     <licence>agpl</licence>
     <author mail="rsfneg@gmail.com">Ricardo Ferreira</author>
     <namespace>FolderProtection</namespace>
+
+    <types>
+        <filesystem/>
+    </types>
+
     <category>files</category>
-    
-    <dependencies>
-        <php min-version="8.1"/>
-        <nextcloud min-version="28" max-version="33"/>
-    </dependencies>
+
     <website>https://github.com/kreotropic/folder_protection</website>
     <bugs>https://github.com/kreotropic/folder_protection/issues</bugs>
     <repository>https://github.com/kreotropic/folder_protection</repository>
@@ -25,6 +34,11 @@
     <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Protected_Folder.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Widget.png</screenshot>
 
+    <dependencies>
+        <php min-version="8.3"/>
+        <nextcloud min-version="33" max-version="34"/>
+    </dependencies>
+
     <commands>
         <command>OCA\FolderProtection\Command\ListProtected</command>
         <command>OCA\FolderProtection\Command\Protect</command>
@@ -32,46 +46,20 @@
         <command>OCA\FolderProtection\Command\CheckProtection</command>
         <command>OCA\FolderProtection\Command\ClearNotifications</command>
     </commands>
-    
+
     <settings>
-        <admin-section>OCA\FolderProtection\Settings\AdminSection</admin-section>
         <admin>OCA\FolderProtection\Settings\AdminSettings</admin>
+        <admin-section>OCA\FolderProtection\Settings\AdminSection</admin-section>
     </settings>
-
-    <dav>
-        <properties>
-            <property namespace="http://nextcloud.org/ns" name="is-protected">
-                <description>Indicates if the folder is protected from modifications</description>
-            </property>
-            <property namespace="http://nextcloud.org/ns" name="protection-reason">
-                <description>Reason why the folder is protected</description>
-            </property>
-            <property namespace="http://nextcloud.org/ns" name="is-deletable">
-                <description>Indicates if the folder can be deleted</description>
-            </property>
-            <property namespace="http://nextcloud.org/ns" name="is-renameable">
-                <description>Indicates if the folder can be renamed</description>
-            </property>
-            <property namespace="http://nextcloud.org/ns" name="is-moveable">
-                <description>Indicates if the folder can be moved</description>
-            </property>
-        </properties>
-    </dav>
-
-
-    <notifications>
-        <notifier>OCA\FolderProtection\Notification\Notifier</notifier>
-    </notifications>
-
-    <types>
-        <filesystem/>
-    </types>
 
     <dashboard>
         <widget>OCA\FolderProtection\Dashboard\ProtectedFoldersWidget</widget>
     </dashboard>
 
-
-
-
+    <!--
+        Os blocos <dav><properties> e <notifications><notifier> foram removidos:
+        nenhum dos dois existe neste schema nem é lido pelo servidor. As propriedades
+        DAV são registadas por DAV\ProtectionPropertyPlugin e o notifier por
+        AppInfo\Application::register() via registerNotifierService().
+    -->
 </info>

@@ -1,0 +1,57 @@
+# .nextcloudignore — ficheiros excluídos do tarball de distribuição (App Store).
+# Usado pela krankerl (`krankerl package`). Sintaxe estilo .gitignore.
+# NÃO exclui appinfo/signature.json — é necessário no pacote assinado.
+
+# --- Dependências de desenvolvimento -----------------------------------------
+node_modules/
+# vendor/ contém apenas require-dev (PHPUnit); o runtime não usa vendor/autoload
+vendor/
+
+# --- Fontes / build (js/ e css/ já vão compilados) ---------------------------
+src/
+# Ferramentas de manutenção (compose da instância NC 34 de verificação, notas).
+# Nada aqui é necessário para correr a app.
+build/
+webpack.config.js
+package.json
+package-lock.json
+composer.json
+composer.lock
+js/*.map
+
+# --- Testes ------------------------------------------------------------------
+tests/
+phpunit.xml
+phpunit.integration.xml
+.phpunit.result.cache
+
+# --- Documentação de desenvolvimento / notas internas ------------------------
+CLAUDE.md
+DEV_CHANGELOG.md
+gemini_worklog.md
+memory/
+screenshots/
+manual_curl_test.sh
+test_etag.sh
+
+# --- VCS ---------------------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.nextcloudignore
+
+# --- IDE / editores ----------------------------------------------------------
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Sistema operativo / temporários -----------------------------------------
+.DS_Store
+Thumbs.db
+*.bak
+*.backup
+*~
+*.log
+*.tmp.*

@@ -285,6 +285,7 @@
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
 import { showSuccess, showError } from '@nextcloud/dialogs'
+import { translate } from '@nextcloud/l10n'
 import FolderPicker from './FolderPicker.vue'
 
 export default {
@@ -632,7 +633,7 @@ export default {
         },
 
         t(app, text, vars = {}) {
-            return OC.L10N.translate(app, text, vars)
+            return translate(app, text, vars)
         },
     },
 }

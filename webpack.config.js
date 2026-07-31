@@ -5,6 +5,7 @@ module.exports = {
     entry: {
         admin: './src/admin.js',
         dashboard: './src/dashboard.js',
+        'folder-protection-ui': './src/folder-protection-ui.js',
     },
     output: {
         path: path.resolve(__dirname, 'js'),

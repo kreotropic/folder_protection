@@ -475,7 +475,8 @@ class WebDAVProtectionTest extends TestCase {
 
         $responseBody = curl_exec($ch);
         $httpCode     = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        // No curl_close(): it has had no effect since PHP 8.0 and is deprecated
+        // since 8.5, which NC 34 ships. The handle is freed when $ch goes out of scope.
 
         return [
             'http_code' => $httpCode,
