@@ -78,6 +78,20 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                 break;
             }
         }
+        // Uma pasta que *contém* uma protegida também não pode ser eliminada: o
+        // beforeUnbind rejeita-a. Se não o dissermos aqui, o cliente desktop vê 'D',
+        // apaga-a localmente, leva 403 e fica em erro de sincronização permanente —
+        // é exactamente o que acontecia ao apagar o pai de uma pasta protegida.
+        $blocksDelete = $isProtected;
+        if (!$blocksDelete) {
+            foreach ($candidates as $candidate) {
+                if ($this->protectionChecker->hasProtectedDescendant($candidate)) {
+                    $blocksDelete = true;
+                    break;
+                }
+            }
+        }
+
         $path = $candidates[0]; // primary path for logging
 
         $this->logger->debug("FolderProtection PROPFIND: path='$path', protected=" . ($isProtected ? 'yes' : 'no'));
@@ -93,8 +107,8 @@ class ProtectionPropertyPlugin extends ServerPlugin {
         });
 
         // 3. Meta-propriedades para controlar UI do cliente
-        $propFind->handle(self::PROP_IS_DELETABLE, function() use ($isProtected) {
-            return $isProtected ? 'false' : 'true';
+        $propFind->handle(self::PROP_IS_DELETABLE, function() use ($blocksDelete) {
+            return $blocksDelete ? 'false' : 'true';
         });
 
         $propFind->handle(self::PROP_IS_RENAMEABLE, function() use ($isProtected) {
@@ -120,7 +134,7 @@ class ProtectionPropertyPlugin extends ServerPlugin {
         //
         // A protecção real (bloquear DELETE/MOVE/COPY mesmo que o cliente tente) continua
         // garantida pelo ProtectionPlugin em beforeUnbind/beforeMove/beforeBind.
-        if ($isProtected) {
+        if ($blocksDelete) {
             // PropFind::get() force-avalia o lazy callback registado pelo FilesPlugin (prioridade 100)
             // e devolve a string de permissões actual (ex: "RGDNVCK").
             // PropFind::set() substitui o valor para todos os clientes que peçam esta propriedade.

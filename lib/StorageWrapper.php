@@ -184,7 +184,13 @@ class StorageWrapper extends Wrapper {
     }
 
     public function getPermissions($path): int {
-        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
+        $checkPath = $this->buildCheckPath($path);
+
+        // Also strip for a folder that merely *contains* a protected one: rmdir on it is
+        // refused too, so advertising DELETE just invites the desktop client to try,
+        // fail with 403, and sit in a sync error.
+        if ($this->protectionChecker->isProtected($checkPath)
+            || $this->protectionChecker->hasProtectedDescendant($checkPath)) {
             // Strip only DELETE — the folder cannot be deleted, but its contents remain
             // writable. Clients see no 'D' in oc:permissions (also enforced by
             // ProtectionPropertyPlugin) so they will not attempt to delete the folder.

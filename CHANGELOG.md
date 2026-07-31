@@ -24,14 +24,29 @@
   user being denied the name.
 
 - **Deleting the parent of a protected folder broke desktop sync unrecoverably.** Deleting
-  the protected folder itself worked — the client re-downloaded it — but deleting an
-  ancestor left the client stuck in a sync error that only a manual re-copy cleared.
-  `touchProtectedNode()` gives a fresh etag to the refused node and its parent only, so
-  in the ancestor case everything *inside* still matched the client's journal. The client
-  concluded the contents were in sync, saw them missing locally, propagated the deletion,
-  got 403 again, and parked the folder in a permanent error. `beforeUnbind` now calls
-  `touchSubtree()` when the block comes from `hasProtectedDescendant`, re-etagging the
-  subtree so the client pulls the contents back. Bounded at 10000 entries per pass.
+  the protected folder itself was fine — it came straight back — but deleting an ancestor
+  left the client in a sync error that only a manual re-copy cleared.
+
+  What makes the direct case work is not a retry, it is that the client never attempts the
+  delete: `ProtectionPropertyPlugin` strips `D` from `oc:permissions`, so the folder is
+  advertised as non-deletable and the client restores it locally. That strip was keyed on
+  `isProtected()` — an exact match — so an ancestor still advertised `RGDNVCK`. The client
+  deleted it, hit the 403 that `beforeUnbind` raises for a protected descendant, and had
+  nowhere to go. Both the property plugin and `StorageWrapper::getPermissions()` now strip
+  `D` when `hasProtectedDescendant()` is true as well, so the whole ancestor chain is
+  advertised as non-deletable and matches what the server actually enforces.
+
+  `beforeUnbind` additionally calls `touchSubtree()` in this case, giving the subtree fresh
+  etags (bounded at 10000 entries) so a client that already removed the contents locally
+  pulls them back rather than reading them as a deletion to propagate.
+
+### Changed
+- `hasProtectedDescendant()` answers from the cached protection list instead of running a
+  `COUNT(*)` with a `LIKE`. It is now called once per node on every PROPFIND, where a query
+  per listed file was not affordable. The cached list is already invalidated by
+  `clearCacheForPath()` on every protect/unprotect, so it is no more stale than
+  `isProtected()`. Comparing in PHP also drops the `LIKE` wildcard escaping, where an
+  unescaped `_` in a folder name matched any character.
 
 - **The "Move or copy" entry stayed visible in a protected folder's row menu.** The
   selector looked for action id `copy`; Nextcloud's id is `move-copy` — the same one the

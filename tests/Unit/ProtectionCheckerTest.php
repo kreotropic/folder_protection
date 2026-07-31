@@ -235,65 +235,55 @@ class ProtectionCheckerTest extends TestCase {
     // -------------------------------------------------------------------------
 
     /**
-     * Build an IDBConnection mock for hasProtectedDescendant: the COUNT(*) query
-     * returns $count via fetchOne(), and escapeLikeParameter() is a pass-through.
+     * hasProtectedDescendant now answers from the cached folder list — it runs once per
+     * node on every PROPFIND, so a COUNT(*) per call was not affordable. These tests seed
+     * the cache and assert the DB is never touched.
      */
-    private function dbForDescendantCount(int $count): IDBConnection&MockObject {
+    private function checkerWithProtected(array $paths): ProtectionChecker {
+        $this->cache->set('all_protected_folders', json_encode($paths));
         $db = $this->createMock(IDBConnection::class);
-        $db->method('escapeLikeParameter')->willReturnArgument(0);
-        $db->method('getQueryBuilder')->willReturnCallback(function () use ($count) {
-            $result = $this->createMock(IResult::class);
-            $result->method('fetchOne')->willReturn($count);
-            $result->method('closeCursor')->willReturn(true);
+        $db->expects($this->never())->method('getQueryBuilder');
 
-            $func = $this->createMock(IFunctionBuilder::class);
-            $func->method('count')->willReturn($this->createMock(\OCP\DB\QueryBuilder\IQueryFunction::class));
-
-            $expr = $this->createMock(IExpressionBuilder::class);
-            $expr->method('like')->willReturn('1=1');
-
-            $qb = $this->createMock(IQueryBuilder::class);
-            $qb->method('select')->willReturnSelf();
-            $qb->method('from')->willReturnSelf();
-            $qb->method('where')->willReturnSelf();
-            $qb->method('createNamedParameter')->willReturnArgument(0);
-            $qb->method('func')->willReturn($func);
-            $qb->method('expr')->willReturn($expr);
-            $qb->method('executeQuery')->willReturn($result);
-            return $qb;
-        });
-        return $db;
+        return new ProtectionChecker($db, $this->cacheFactory);
     }
 
     public function testHasProtectedDescendant_True(): void {
-        // DB reports a matching descendant (COUNT = 1)
-        $checker = new ProtectionChecker($this->dbForDescendantCount(1), $this->cacheFactory);
+        $checker = $this->checkerWithProtected(['/files/A/B/C']);
         $this->assertTrue($checker->hasProtectedDescendant('/files/A'));
         $this->assertTrue($checker->hasProtectedDescendant('/files/A/B'));
     }
 
     public function testHasProtectedDescendant_False(): void {
-        // DB reports no descendants (COUNT = 0)
-        $checker = new ProtectionChecker($this->dbForDescendantCount(0), $this->cacheFactory);
+        $checker = $this->checkerWithProtected(['/files/A/B/C']);
+        // The protected path itself is not its own descendant
         $this->assertFalse($checker->hasProtectedDescendant('/files/A/B/C'));
         $this->assertFalse($checker->hasProtectedDescendant('/files/X'));
     }
 
-    public function testHasProtectedDescendant_RootUsesCachedList(): void {
-        // For the root path, any existing protection counts as a descendant and the
-        // method short-circuits on the cached list WITHOUT hitting the DB.
-        $this->cache->set('all_protected_folders', json_encode(['/files/A']));
-        $db = $this->createMock(IDBConnection::class);
-        $db->expects($this->never())->method('getQueryBuilder');
+    /**
+     * Prefix matching must respect path segments: '/files/A' must not be treated as an
+     * ancestor of '/files/AB/C'. The old LIKE query had the mirror-image hazard, where an
+     * unescaped '_' in a folder name matched any character.
+     */
+    public function testHasProtectedDescendant_DoesNotMatchPartialSegment(): void {
+        $checker = $this->checkerWithProtected(['/files/AB/C']);
+        $this->assertFalse($checker->hasProtectedDescendant('/files/A'));
+        $this->assertTrue($checker->hasProtectedDescendant('/files/AB'));
+    }
 
-        $checker = new ProtectionChecker($db, $this->cacheFactory);
+    public function testHasProtectedDescendant_UnderscoreIsLiteral(): void {
+        $checker = $this->checkerWithProtected(['/files/my_folder/sub']);
+        $this->assertTrue($checker->hasProtectedDescendant('/files/my_folder'));
+        $this->assertFalse($checker->hasProtectedDescendant('/files/myXfolder'));
+    }
+
+    public function testHasProtectedDescendant_RootUsesCachedList(): void {
+        $checker = $this->checkerWithProtected(['/files/A']);
         $this->assertTrue($checker->hasProtectedDescendant('/'));
     }
 
     public function testHasProtectedDescendant_RootEmpty(): void {
-        $this->cache->set('all_protected_folders', json_encode([]));
-        $db = $this->createMock(IDBConnection::class);
-        $checker = new ProtectionChecker($db, $this->cacheFactory);
+        $checker = $this->checkerWithProtected([]);
         $this->assertFalse($checker->hasProtectedDescendant('/'));
     }
 

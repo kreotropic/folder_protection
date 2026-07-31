@@ -206,22 +206,22 @@ class ProtectionChecker {
             return !empty($this->getProtectedFolders());
         }
 
-        // Escapa wildcards do LIKE ('_' e '%') no path antes de acrescentar o '%'
-        // final. Sem isto, um nome de pasta com '_' (muito comum) seria interpretado
-        // como "qualquer caracter" e produziria falsos positivos — bloqueando
-        // operações sobre pastas que não têm descendentes protegidos.
-        $prefix = $this->db->escapeLikeParameter(rtrim($normalizedPath, '/') . '/') . '%';
+        // Prefix-match sobre a lista já em cache em vez de um LIKE por chamada.
+        // Motivo: isto passou a correr no PROPFIND, uma vez por nó listado — uma
+        // query por ficheiro numa pasta grande era insustentável. A lista é
+        // invalidada por clearCacheForPath() em qualquer protect/unprotect, tal como
+        // isProtected(), por isso não fica mais desactualizada do que já ficava.
+        // Bónus: comparar strings em PHP dispensa o escape dos wildcards do LIKE,
+        // onde um '_' no nome da pasta dava falsos positivos.
+        $prefix = rtrim($normalizedPath, '/') . '/';
 
-        $qb = $this->db->getQueryBuilder();
-        $qb->select($qb->func()->count('*'))
-            ->from('folder_protection')
-            ->where($qb->expr()->like('path', $qb->createNamedParameter($prefix)));
+        foreach ($this->getProtectedFolders() as $protectedPath) {
+            if (str_starts_with($this->normalizePath($protectedPath), $prefix)) {
+                return true;
+            }
+        }
 
-        $result = $qb->executeQuery();
-        $count = (int) $result->fetchOne();
-        $result->closeCursor();
-
-        return $count > 0;
+        return false;
     }
 
     /**
