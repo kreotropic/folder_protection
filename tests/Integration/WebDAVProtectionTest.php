@@ -231,33 +231,34 @@ class WebDAVProtectionTest extends TestCase {
     }
 
     // -------------------------------------------------------------------------
-    // Tests — MKCOL basename guard (stepping-stone prevention)
+    // Tests — MKCOL name reuse
     // -------------------------------------------------------------------------
 
     /**
-     * When a protected folder named "Template" exists at /Templates/Template,
-     * attempting to create a NEW folder also named "Template" at a DIFFERENT
-     * location must be blocked — this is the stepping-stone that the Windows
-     * client creates before sending MOVE.
+     * Protection is path-based, so a protected folder at /Parent/Name must not
+     * reserve the name "Name" anywhere else on the server. This used to be blocked
+     * to stop the Windows client leaving a stepping-stone folder behind; that is
+     * now handled by deleting the empty stepping-stone when the MOVE is rejected
+     * (see testWindowsClientMoveSequenceNoOrphanedFolder), which does not punish
+     * every unrelated user who wants a folder with the same name.
      */
-    public function testMKCOLWithSameBasenameAsProtectedFolderIsBlocked(): void {
+    public function testMKCOLWithSameBasenameAsProtectedFolderIsAllowed(): void {
         $this->createFolder('/TestProt_BasenameParent_{$this->runId}');
         $this->createFolder('/TestProt_BasenameParent_{$this->runId}/UniqueFolder99_{$this->runId}');
         $this->protectPath('/files/TestProt_BasenameParent_{$this->runId}/UniqueFolder99_{$this->runId}');
 
-        // Attempt to create a folder with the same basename at a different location
+        // Same basename, different location — unrelated to the protected path
         $response = $this->dav('MKCOL', '/UniqueFolder99_{$this->runId}');
-        $this->createdDavPaths[] = '/UniqueFolder99_{$this->runId}'; // cleanup even if it was created
+        $this->createdDavPaths[] = '/UniqueFolder99_{$this->runId}';
 
-        $this->assertSame(403, $response['http_code'],
-            'MKCOL with same basename as protected folder must return 403');
-        $this->assertFolderNotExists('/UniqueFolder99_{$this->runId}',
-            'Stepping-stone folder must not be created at root');
+        $this->assertContains($response['http_code'], [201, 405],
+            'MKCOL reusing a protected folder name elsewhere must be allowed');
+        $this->assertFolderExists('/UniqueFolder99_{$this->runId}',
+            'Folder reusing the name must actually be created');
     }
 
     /**
-     * Creating a subfolder INSIDE a protected folder must remain allowed —
-     * the basename guard must not block internal organisation.
+     * Creating a subfolder INSIDE a protected folder must remain allowed.
      */
     public function testMKCOLInsideProtectedFolderIsAllowed(): void {
         $this->setupProtectedFolder('/TestProt_InternalMKCOL_{$this->runId}');
@@ -279,7 +280,9 @@ class WebDAVProtectionTest extends TestCase {
      *   1. MKCOL at destination (pre-creates empty stepping-stone)
      *   2. MOVE source → destination
      *
-     * Expected: both steps are blocked and NO orphaned folder remains.
+     * Step 1 is allowed — the server cannot tell an innocent new folder from a
+     * stepping-stone until the MOVE arrives. Step 2 is rejected, and rejecting it
+     * takes the now-pointless empty folder with it, so nothing is left behind.
      */
     public function testWindowsClientMoveSequenceNoOrphanedFolder(): void {
         // Setup: create /Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId} and protect it
@@ -287,16 +290,14 @@ class WebDAVProtectionTest extends TestCase {
         $this->createFolder('/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}');
         $this->protectPath('/files/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}');
 
-        // Step 1 (Windows client): MKCOL destination at root — must be BLOCKED
+        // Step 1 (Windows client): MKCOL destination at root — allowed
         $mkcolResponse = $this->dav('MKCOL', '/ProtectedFolder_{$this->runId}');
         $this->createdDavPaths[] = '/ProtectedFolder_{$this->runId}';
 
-        $this->assertSame(403, $mkcolResponse['http_code'],
-            'Step 1 — Windows MKCOL of stepping-stone must be blocked');
-        $this->assertFolderNotExists('/ProtectedFolder_{$this->runId}',
-            'Step 1 — No stepping-stone must be created at root');
+        $this->assertContains($mkcolResponse['http_code'], [201, 405],
+            'Step 1 — MKCOL at the destination is allowed');
 
-        // Step 2 (Windows client): MOVE — must also be BLOCKED
+        // Step 2 (Windows client): MOVE — must be BLOCKED
         $moveResponse = $this->dav('MOVE', '/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}', [
             'Destination' => $this->davBase . '/ProtectedFolder_{$this->runId}',
         ]);
@@ -306,7 +307,7 @@ class WebDAVProtectionTest extends TestCase {
         $this->assertFolderExists('/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}',
             'Step 2 — Original folder must still exist at source');
         $this->assertFolderNotExists('/ProtectedFolder_{$this->runId}',
-            'Step 2 — No orphaned folder at destination');
+            'Step 2 — Empty stepping-stone must be cleaned up at destination');
     }
 
     // -------------------------------------------------------------------------

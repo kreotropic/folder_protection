@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **A protected folder reserved its name across the whole server.** With
+  `/files/a/b/gama` protected, no user could create a folder called `gama` anywhere —
+  `MKCOL /files/gama` returned 403. This was documented as a known limitation up to
+  v2.1.0 and believed fixed in v2.2.0: `9363b42` removed the `isAnyProtectedWithBasename`
+  heuristic from `StorageWrapper` and the README line was dropped. But the same heuristic
+  had been added to `ProtectionPlugin::beforeBind` three months earlier, for a different
+  purpose, and was never removed — and DAV is the path both Explorer and the web UI use,
+  so the limitation survived in full while no longer being documented. The `beforeBind`
+  block is now gone; protection is genuinely path-based again.
+
+- **Rejecting a desktop-client move left an empty folder at the destination.** This is
+  what the server-wide name block was really guarding against: the Windows client sends
+  `MKCOL destination` before `MOVE`, so refusing the move stripped nothing back out.
+  `beforeMove` already had a `deleteEmptyNode()` call for it, but that code was
+  unreachable — Sabre emits `beforeUnbind` for the move *source* before `beforeMove`, and
+  a protected source aborts the request there. The cleanup now runs from `beforeUnbind`
+  via `cleanUpMoveSteppingStone()`, which reads the `Destination` header when the request
+  method is MOVE. The orphan is removed for the one folder involved, instead of every
+  user being denied the name.
+
+- **Deleting the parent of a protected folder broke desktop sync unrecoverably.** Deleting
+  the protected folder itself worked — the client re-downloaded it — but deleting an
+  ancestor left the client stuck in a sync error that only a manual re-copy cleared.
+  `touchProtectedNode()` gives a fresh etag to the refused node and its parent only, so
+  in the ancestor case everything *inside* still matched the client's journal. The client
+  concluded the contents were in sync, saw them missing locally, propagated the deletion,
+  got 403 again, and parked the folder in a permanent error. `beforeUnbind` now calls
+  `touchSubtree()` when the block comes from `hasProtectedDescendant`, re-etagging the
+  subtree so the client pulls the contents back. Bounded at 10000 entries per pass.
+
+- **The "Move or copy" entry stayed visible in a protected folder's row menu.** The
+  selector looked for action id `copy`; Nextcloud's id is `move-copy` — the same one the
+  selection bar was already matching correctly. Delete was hidden, copy was not, so the
+  action was clickable and only failed once a destination had been picked.
+
 ## [2.4.0] - 2026-07-31
 
 ### Fixed

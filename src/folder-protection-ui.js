@@ -338,7 +338,9 @@ import { generateUrl } from '@nextcloud/router'
             if (!activeRow) return;
 
             const selectors = [
-                // Copy
+                // Copy. The action id is "move-copy" — the same one the selection bar
+                // hides in updateSelectionBar(). "copy" never matched anything.
+                '[data-cy-files-list-row-action="move-copy"]',
                 '[data-cy-files-list-row-action="copy"]',
                 '[data-action="copy"]',
                 'button[aria-label*="Copy"], button[aria-label*="Copiar"]',

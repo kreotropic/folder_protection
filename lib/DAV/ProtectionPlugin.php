@@ -4,6 +4,8 @@ namespace OCA\FolderProtection\DAV;
 use OCA\DAV\Connector\Sabre\Node;
 use OCA\FolderProtection\ProtectionChecker;
 use OCA\FolderProtection\Service\NotificationService;
+use OCP\Files\Cache\ICache;
+use OCP\Files\FileInfo;
 use OCP\IL10N;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
@@ -38,6 +40,15 @@ class FolderProtected extends Exception {
 
 class ProtectionPlugin extends ServerPlugin {
     use GroupFolderStorageTrait;
+
+    /**
+     * Ceiling on how many entries a single touchSubtree() pass will re-etag.
+     * This app exists to protect very large folders, and the walk costs one
+     * cache query per directory, so an unbounded pass on a rejected DELETE
+     * could stall the request. Beyond the ceiling the client keeps stale etags
+     * for the deeper entries and those need a manual re-sync.
+     */
+    private const TOUCH_SUBTREE_MAX_NODES = 10000;
 
     private $protectionChecker;
     private NotificationService $notificationService;
@@ -164,26 +175,13 @@ class ProtectionPlugin extends ServerPlugin {
                 }
             }
 
-            // Block creation of a folder whose basename matches a protected folder at a different
-            // location, but only when the new path is NOT inside a protected folder.
-            // This prevents desktop clients from creating an orphaned "stepping-stone" folder at the
-            // destination when a MOVE of a protected folder is rejected by the server.
-            $basename = basename($uri);
-            if ($basename !== '') {
-                $insideProtected = false;
-                foreach ($pathsToCheck as $candidate) {
-                    if ($this->protectionChecker->isProtectedOrParentProtected($candidate)) {
-                        $insideProtected = true;
-                        break;
-                    }
-                }
-                if (!$insideProtected && $this->protectionChecker->isAnyProtectedWithBasename($basename)) {
-                    $this->logger->warning("FolderProtection DAV: Blocking bind — basename '$basename' matches a protected folder");
-                    $this->touchAncestors($uri);
-                    $this->setHeaders('create', $this->l10n->t("A protected folder named '%s' exists", [$basename]));
-                    throw new FolderProtected($this->l10n->t("Cannot create '%s': a protected folder with this name already exists on the server.", [$basename]));
-                }
-            }
+            // A folder whose basename matches a protected folder elsewhere is deliberately
+            // NOT blocked here. Reserving the name across the whole server is far too broad:
+            // with /files/a/b/gama protected it made "gama" uncreatable anywhere, for every
+            // user. The orphaned "stepping-stone" folder that this used to guard against —
+            // a desktop client pre-creating the destination before sending a MOVE the server
+            // then rejects — is cleaned up by deleteEmptyNode() in beforeMove instead, which
+            // only touches the specific empty folder involved in the rejected move.
         } catch (\Throwable $e) {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
@@ -200,6 +198,9 @@ class ProtectionPlugin extends ServerPlugin {
 
                 if ($directlyProtected || $hasProtectedChild) {
                     $this->touchProtectedNode($uri);
+                    if ($hasProtectedChild) {
+                        $this->touchSubtree($uri);
+                    }
 
                     $reason = $this->l10n->t('Protected by server policy');
                     if ($directlyProtected) {
@@ -215,6 +216,7 @@ class ProtectionPlugin extends ServerPlugin {
                     $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
                     $this->setHeaders('delete', $msg);
                     $this->sendProtectionNotification($candidate, 'delete');
+                    $this->cleanUpMoveSteppingStone();
                     $this->sendErrorResponse(403, $msg);
                     return false;
                 }
@@ -292,6 +294,34 @@ class ProtectionPlugin extends ServerPlugin {
             if ($e instanceof \Sabre\DAV\Exception) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
             throw new FolderProtected($this->l10n->t('Protection check failed'));
+        }
+    }
+
+    /**
+     * When the refused unbind is the source half of a MOVE, drop the empty folder the
+     * client has already created at the destination.
+     *
+     * Sabre emits beforeUnbind for the move source *before* beforeMove, so a protected
+     * source aborts the request here and the equivalent cleanup in beforeMove is never
+     * reached. Without this, the Windows client's "MKCOL destination, then MOVE" sequence
+     * leaves an empty folder behind on every rejected drag — which is what the old
+     * server-wide basename block in beforeBind was papering over.
+     */
+    private function cleanUpMoveSteppingStone(): void {
+        $request = $this->server->httpRequest;
+        if (strtoupper((string)$request->getMethod()) !== 'MOVE') {
+            return;
+        }
+
+        $destination = $request->getHeader('Destination');
+        if (!$destination) {
+            return;
+        }
+
+        try {
+            $this->deleteEmptyNode($this->server->calculateUri($destination));
+        } catch (\Throwable $e) {
+            $this->logger->debug('FolderProtection DAV: could not resolve MOVE destination for cleanup: ' . $e->getMessage());
         }
     }
 
@@ -441,6 +471,59 @@ class ProtectionPlugin extends ServerPlugin {
             $current = $parent;
             $depth++;
         }
+    }
+
+    /**
+     * Give every entry below $uri a fresh etag and mtime.
+     *
+     * Only needed when a DELETE is refused because the folder *contains* a protected
+     * descendant rather than being protected itself. By then the desktop client has
+     * already removed the whole subtree locally, and it only re-downloads entries whose
+     * etag differs from the one in its journal. touchProtectedNode() bumps just $uri and
+     * its parent, so everything underneath still looks unchanged: the client reads the
+     * missing files as a local deletion to propagate, retries DELETE, gets 403 again, and
+     * parks the folder in a sync error that only a manual re-copy clears. Bumping the
+     * subtree makes the client treat the contents as remote changes and pull them back.
+     *
+     * This runs only on a rejected DELETE — rare, and always user-initiated.
+     */
+    private function touchSubtree(string $uri): void {
+        try {
+            $node = $this->server->tree->getNodeForPath($uri);
+            if (!$node instanceof Node) {
+                return;
+            }
+
+            $cache   = $node->getFileInfo()->getStorage()->getCache();
+            $pending = [$node->getFileInfo()->getId()];
+            $touched = 0;
+
+            while ($pending !== [] && $touched < self::TOUCH_SUBTREE_MAX_NODES) {
+                foreach ($cache->getFolderContentsById(array_pop($pending)) as $entry) {
+                    $this->updateCacheEntry($cache, $entry->getId());
+                    $touched++;
+                    if ($entry->getMimeType() === FileInfo::MIMETYPE_FOLDER) {
+                        $pending[] = $entry->getId();
+                    }
+                }
+            }
+
+            if ($pending !== []) {
+                $this->logger->warning(
+                    "FolderProtection DAV: stopped touching '$uri' at " . self::TOUCH_SUBTREE_MAX_NODES
+                    . ' entries; deeper ones keep their etag and may need a manual re-sync'
+                );
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning("FolderProtection DAV: Failed to touch subtree '$uri': " . $e->getMessage());
+        }
+    }
+
+    private function updateCacheEntry(ICache $cache, int $fileId): void {
+        $cache->update($fileId, [
+            'mtime' => time(),
+            'etag'  => md5(uniqid((string)time(), true)),
+        ]);
     }
 
     private function updateNodeCache(Node $node): void {
