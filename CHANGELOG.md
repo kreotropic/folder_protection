@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.4.0] - 2026-08-02
 
 ### Fixed
 - **A protected folder reserved its name across the whole server.** With
@@ -40,22 +40,11 @@
   etags (bounded at 10000 entries) so a client that already removed the contents locally
   pulls them back rather than reading them as a deletion to propagate.
 
-### Changed
-- `hasProtectedDescendant()` answers from the cached protection list instead of running a
-  `COUNT(*)` with a `LIKE`. It is now called once per node on every PROPFIND, where a query
-  per listed file was not affordable. The cached list is already invalidated by
-  `clearCacheForPath()` on every protect/unprotect, so it is no more stale than
-  `isProtected()`. Comparing in PHP also drops the `LIKE` wildcard escaping, where an
-  unescaped `_` in a folder name matched any character.
-
 - **The "Move or copy" entry stayed visible in a protected folder's row menu.** The
   selector looked for action id `copy`; Nextcloud's id is `move-copy` — the same one the
   selection bar was already matching correctly. Delete was hidden, copy was not, so the
   action was clickable and only failed once a destination had been picked.
 
-## [2.4.0] - 2026-07-31
-
-### Fixed
 - **Notifications never reached the user.** The notifier was declared only through an
   `<notifications><notifier>` block in `appinfo/info.xml`. That element is not read by the
   server and does not exist in the App Store `info.xsd` — no core app uses it; they all call
@@ -95,6 +84,13 @@
   provided, and the `use` statement pointed at a non-existent class.
 
 ### Changed
+- `hasProtectedDescendant()` answers from the cached protection list instead of running a
+  `COUNT(*)` with a `LIKE`. It is now called once per node on every PROPFIND, where a query
+  per listed file was not affordable. The cached list is already invalidated by
+  `clearCacheForPath()` on every protect/unprotect, so it is no more stale than
+  `isProtected()`. Comparing in PHP also drops the `LIKE` wildcard escaping, where an
+  unescaped `_` in a folder name matched any character.
+
 - **Nextcloud 34 compatibility**: `max-version` raised to 34, `min-version` to 33, and the
   PHP requirement to 8.3 (NC 34 requires 8.3+; 8.2 is deprecated).
 - Removed the `<dav><properties>` and `<notifications>` blocks from `info.xml`. Neither is a
