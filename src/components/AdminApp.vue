@@ -13,7 +13,8 @@
         <div class="display-settings">
             <label class="lock-toggle-label">
                 <input type="checkbox" v-model="showLocks" @change="onToggleLocks" />
-                🔒 {{ t('folder_protection', 'Show lock icons on protected folders in the file list') }}
+                <span class="lock-icon-inline" v-html="lockIconSvg"></span>
+                {{ t('folder_protection', 'Show lock icons on protected folders in the file list') }}
             </label>
         </div>
 
@@ -30,7 +31,7 @@
                 <div class="folder-icon">
                     <span class="folder-img icon-folder"></span>
                     <span v-if="folder.mountPoint" class="group-badge" :title="t('folder_protection', 'Group Folder')">👥</span>
-                    <span class="lock-overlay">🔒</span>
+                    <span class="lock-overlay" v-html="lockIconSvg"></span>
                 </div>
                 <div class="folder-details">
                     <div class="folder-path">
@@ -143,7 +144,8 @@
                                 </div>
                                 <div class="gf-actions">
                                     <span v-if="gf.protected && !gf.partialProtection" class="badge-protected">
-                                        🔒 {{ t('folder_protection', 'Protected') }}
+                                        <span class="lock-icon-inline" v-html="lockIconSvg"></span>
+                                        {{ t('folder_protection', 'Protected') }}
                                     </span>
                                     <span v-if="gf.partialProtection" class="badge-partial"
                                           :title="t('folder_protection', 'Protected via custom path ({path}). This only blocks folder name creation but does not fully protect the group folder from deletion or move. Remove and re-add via Group Folders tab.', { path: gf.protectionPath || '/files/' + gf.mountPoint })">
@@ -287,6 +289,7 @@ import { generateUrl } from '@nextcloud/router'
 import { showSuccess, showError } from '@nextcloud/dialogs'
 import { translate } from '@nextcloud/l10n'
 import FolderPicker from './FolderPicker.vue'
+import { LOCK_SVG } from '../lock-icon.js'
 
 export default {
     name: 'AdminApp',
@@ -296,6 +299,7 @@ export default {
         return {
             folders: [],
             loading: true,
+            lockIconSvg: LOCK_SVG,
             showLocks: localStorage.getItem('fp_show_locks') !== 'false',
             showAddModal: false,
             submitting: false,
@@ -713,9 +717,31 @@ export default {
     position: absolute;
     bottom: 4px;
     right: 0;
-    font-size: 13px;
-    line-height: 1;
+    width: 14px;
+    height: 14px;
+    color: var(--color-text-maxcontrast);
     filter: drop-shadow(0 0 2px var(--color-main-background));
+}
+
+.lock-overlay svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Same icon inlined next to text — the "show lock icons" toggle label and
+   the group-folder "Protected" badge. Inherits currentColor on purpose: grey
+   in the toggle label, the badge's own green inside .badge-protected. */
+.lock-icon-inline {
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+    vertical-align: text-bottom;
+}
+
+.lock-icon-inline svg {
+    width: 100%;
+    height: 100%;
 }
 
 .folder-details {
@@ -889,6 +915,9 @@ export default {
 }
 
 .badge-protected {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 12px;
     color: var(--color-success, #46ba61);
     white-space: nowrap;

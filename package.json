@@ -6,8 +6,10 @@
     "dev": "webpack --mode development --watch"
   },
   "dependencies": {
+    "@mdi/js": "^7.4.47",
     "@nextcloud/axios": "^2.0.0",
     "@nextcloud/dialogs": "^3.0.0",
+    "@nextcloud/files": "^4.0.0",
     "@nextcloud/l10n": "^3.4.1",
     "@nextcloud/router": "^2.0.0",
     "vue": "^2.7.14"
