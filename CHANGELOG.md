@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.4.1] - 2026-09-11
+
+### Fixed
+- **Renaming a file or folder inside a protected Team folder was wrongly rejected.**
+  Reported as a Windows sync error ("missing right") right after creating a new folder
+  inside a protected Team folder and trying to rename it. Team folders protected through
+  the admin picker are stored as `/__groupfolders/{id}`, but a MOVE destination doesn't
+  exist yet when Sabre asks for it, so `getInternalPathCandidates()` fell back to
+  mount-point-only candidates and never produced the `/__groupfolders/{id}` form the
+  protection is actually stored under. `beforeMove()`'s "allow when source and destination
+  are in the same protected scope" carve-out could then never match for a Team folder, so
+  a plain rename inside an otherwise-untouched protected folder was blocked — the exact
+  regression this app's own `issue #18` describes. `getInternalPathCandidates()` now
+  resolves the destination's parent node (which does exist) and appends the basename when
+  the destination itself can't be resolved yet, producing the group-folder-ID candidate too.
+
 ## [2.4.0] - 2026-08-02
 
 ### Fixed

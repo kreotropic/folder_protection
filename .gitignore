@@ -28,6 +28,9 @@ Thumbs.db
 # Development artifacts
 screenshots/README.md
 gemini_worklog.md
+
+# Signing certificate — private key must never be committed
+cert/
 DEV_CHANGELOG.md
 manual_curl_test.sh
 test_etag.sh
