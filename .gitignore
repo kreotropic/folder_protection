@@ -31,6 +31,9 @@ gemini_worklog.md
 
 # Signing certificate — private key must never be committed
 cert/
+
+# Packaged release tarballs
+build/artifacts/
 DEV_CHANGELOG.md
 manual_curl_test.sh
 test_etag.sh
