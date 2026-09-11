@@ -212,6 +212,43 @@ class WebDAVProtectionTest extends TestCase {
             'MOVE within protected folder scope must be allowed');
     }
 
+    public function testMoveInsideProtectedTeamFolderIsAllowed(): void {
+        // Regression test for issue #18. Protecting a Team folder through the
+        // admin picker always stores it as /__groupfolders/{id} — AdminController
+        // itself calls the /files/{mountPoint} form "incomplete protection"
+        // that "does NOT protect the actual group folder from DAV operations"
+        // (see listGroupFolders()) — so this test protects the same way a real
+        // admin does, unlike testMoveProtectedSubfolderInsideTeamFolderIsBlocked
+        // above, which predates this test and uses the /files/team/ form.
+        //
+        // With only the folder's root protected in that (correct) format,
+        // renaming something inside it — not itself protected — was wrongly
+        // rejected. Cause: the MOVE destination doesn't exist yet, so
+        // getNodeForPath() fails and path-candidate resolution fell back to
+        // the mount-point form only — never producing the /__groupfolders/{id}
+        // form the protection is actually stored under — so the "same
+        // protected scope" carve-out in beforeMove() could never match for a
+        // destination inside a Team folder, even though the equivalent
+        // personal-folder case (testMoveInsideProtectedFolderIsAllowed)
+        // always worked.
+        $groupFolderPath = $this->resolveGroupFolderPath('team');
+        $sub = '/team/TestProt_TeamMoveInside_' . $this->runId;
+        $this->createFolder($sub);
+        $this->createFile($sub . '/original.txt', 'content');
+        $this->protectPath($groupFolderPath . '/TestProt_TeamMoveInside_' . $this->runId);
+
+        $response = $this->dav('MOVE', $sub . '/original.txt', [
+            'Destination' => $this->davBase . $sub . '/renamed.txt',
+        ]);
+        $this->createdDavPaths[] = $sub . '/renamed.txt';
+        $this->createdDavPaths[] = $sub;
+
+        $this->assertContains($response['http_code'], [201, 204],
+            'MOVE within a protected Team folder scope must be allowed');
+        $this->assertFolderNotExists($sub . '/original.txt',
+            'Original file must be gone after a successful rename');
+    }
+
     // -------------------------------------------------------------------------
     // Tests — COPY
     // -------------------------------------------------------------------------
@@ -388,6 +425,22 @@ class WebDAVProtectionTest extends TestCase {
                 break;
             }
         }
+    }
+
+    /**
+     * Resolves a group folder's mount point (e.g. "team") to its
+     * /__groupfolders/{id} path — the form the admin picker actually stores,
+     * as opposed to the /files/{mountPoint} form some older tests use.
+     */
+    private function resolveGroupFolderPath(string $mountPoint): string {
+        $response = $this->api('GET', '/api/groupfolders');
+        $data = json_decode($response['body'], true);
+        foreach ($data['folders'] ?? [] as $folder) {
+            if ($folder['mountPoint'] === $mountPoint) {
+                return $folder['path'];
+            }
+        }
+        $this->fail("Group folder with mount point '$mountPoint' not found — is the fixture set up?");
     }
 
     // -------------------------------------------------------------------------

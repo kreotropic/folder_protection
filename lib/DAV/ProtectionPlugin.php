@@ -118,6 +118,38 @@ class ProtectionPlugin extends ServerPlugin {
             $this->logger->debug("FolderProtection DAV: getNodeForPath failed for '$uri': " . $e->getMessage());
         }
 
+        // The node itself doesn't exist yet — typically a MOVE/COPY destination,
+        // which is resolved before the operation creates it. Resolve its PARENT
+        // instead (which does exist) and append the basename, so a group-folder-ID
+        // candidate is still produced. Without this, beforeMove()'s "allow when
+        // source and destination are within the same protected scope" carve-out can
+        // never match for a Team folder: the destination falls through to the
+        // mount-point-only regex fallback below, which never produces the
+        // /__groupfolders/{id} form the protection may actually be stored under —
+        // so a plain rename inside an otherwise-untouched protected Team folder was
+        // wrongly rejected (issue #18). A same-directory rename would also have
+        // worked by reusing the source's own candidates, but resolving the parent
+        // handles a move to a different folder too.
+        try {
+            $parentUri = dirname($uri);
+            if ($parentUri !== '' && $parentUri !== '.' && $parentUri !== $uri) {
+                $parentNode = $this->server->tree->getNodeForPath($parentUri);
+                if ($parentNode instanceof Node) {
+                    $parentCandidates = $this->getNodePathCandidates($parentNode);
+                    if (!empty($parentCandidates)) {
+                        $basename = basename($uri);
+                        $candidates = array_map(
+                            static fn (string $p): string => rtrim($p, '/') . '/' . $basename,
+                            $parentCandidates
+                        );
+                        return $this->buildPathsToCheck($candidates);
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logger->debug("FolderProtection DAV: parent getNodeForPath failed for '$uri': " . $e->getMessage());
+        }
+
         // Fallback for direct group folder URL access (/__groupfolders/{id}/...)
         if (preg_match('#^/remote\.php/(?:web)?dav/__groupfolders/(\d+)(/.*)?$#', $uri, $matches)) {
             return $this->buildPathsToCheck(['__groupfolders/' . $matches[1] . ($matches[2] ?? '')]);
