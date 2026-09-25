@@ -16,7 +16,7 @@ class ClearNotifications extends Command {
         $this->protectionChecker = $protectionChecker;
     }
 
-    protected function configure() {
+    protected function configure(): void {
         $this
             ->setName('folder-protection:clear-notifications')
             ->setDescription('Clears the notification rate-limit cache to allow testing notifications immediately');

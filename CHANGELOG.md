@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Nextcloud 35 support.** `<nextcloud max-version>` moves to 35; the range is now
+  33–35. Nothing in the app hit a Nextcloud 35 removal: the front end never used any
+  of the globals dropped there (`oc_requesttoken` and friends, underscore, moment,
+  `dav`, ClipboardJS), the migrations already build their schema through
+  `ISchemaWrapper` + `OCP\DB\Types` rather than the Doctrine classes the new DBAL
+  wrapper hides, `path_hash` is hashed in PHP so the MySQL `MD5()` deprecation does
+  not reach it, and none of the removed `OCP\Remote\*`, preview, calendar or
+  AutoComplete APIs are referenced. `OCP\Util::connectHook('OC_Filesystem',
+  'preSetup')` — how `StorageWrapper` gets installed — is still emitted by
+  `SetupManager::oneTimeUserSetup()` on 35 and there is still no
+  `IRegistrationContext::registerStorageWrapper()` to replace it with.
+
+  Verified on a throwaway 35.0.1 instance (PHP 8.5.11, MariaDB, Redis, groupfolders
+  23.0.1): every app class loads against the real 35 runtime, 25/25 unit and 15/15
+  integration tests pass, `oc:permissions` comes back as `RGNVCK` with
+  `nc:is-protected`/`nc:is-deletable` set, DELETE and MOVE on a protected folder are
+  refused, and a rename *inside* one still succeeds (the v2.4.1 fix for issue #18
+  holds on 35). `build/docker-compose.nc35.yml` brings that instance up; the
+  procedure is in `build/README.md`.
+
+  The lock badge needs no change either: `registerFileAction()` writes into
+  `window._nc_files_scope` in both `@nextcloud/files` 4.0.0 (what the bundle
+  carries) and 4.1.0 (what server 35 ships), so the app's registration is still the
+  one core reads.
+
+### Changed
+- `ClearNotifications::configure()` declares `: void`, matching the other four
+  commands. Symfony Console 7 — which Nextcloud 35 upgraded to — has not typed
+  `Command::configure()` natively yet, so this is not a break being fixed; it is the
+  one command that would start fataling if it ever does.
+- `nextcloud/ocp` (dev-only, for IDE and static analysis) moves from `^32.0` to
+  `^35.0` so the stubs match the server the app is being checked against.
+- README's requirements said Nextcloud 28–33 and PHP 8.1; `appinfo/info.xml` has
+  required 33+ and PHP 8.3 since v2.4.0. It now says 33–35 and PHP 8.3.
+
 ## [2.4.1] - 2026-09-11
 
 ### Fixed

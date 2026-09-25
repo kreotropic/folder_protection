@@ -93,8 +93,8 @@ Contributions for additional languages are welcome — add a `l10n/<locale>.json
 
 ## Requirements
 
-- Nextcloud 28–33
-- PHP 8.1 or later
+- Nextcloud 33–35
+- PHP 8.3 or later
 - Redis or Memcached recommended (app works without it, using in-process cache)
 
 ## License
