@@ -80,13 +80,13 @@ class WebDAVProtectionTest extends TestCase {
     // -------------------------------------------------------------------------
 
     public function testDeleteProtectedFolderIsBlocked(): void {
-        $this->setupProtectedFolder('/TestProt_Delete_{$this->runId}');
+        $this->setupProtectedFolder("/TestProt_Delete_{$this->runId}");
 
-        $response = $this->dav('DELETE', '/TestProt_Delete_{$this->runId}');
+        $response = $this->dav('DELETE', "/TestProt_Delete_{$this->runId}");
 
         $this->assertSame(403, $response['http_code'],
             'DELETE of protected folder must return 403');
-        $this->assertFolderExists('/TestProt_Delete_{$this->runId}',
+        $this->assertFolderExists("/TestProt_Delete_{$this->runId}",
             'Protected folder must still exist after blocked DELETE');
     }
 
@@ -95,58 +95,58 @@ class WebDAVProtectionTest extends TestCase {
     // -------------------------------------------------------------------------
 
     public function testMoveProtectedFolderOutOfScopeIsBlocked(): void {
-        $this->createFolder('/TestProt_Move_Parent_{$this->runId}');
-        $this->createFolder('/TestProt_Move_Parent_{$this->runId}/Protected');
-        $this->protectPath('/files/TestProt_Move_Parent_{$this->runId}/Protected');
+        $this->createFolder("/TestProt_Move_Parent_{$this->runId}");
+        $this->createFolder("/TestProt_Move_Parent_{$this->runId}/Protected");
+        $this->protectPath("/files/TestProt_Move_Parent_{$this->runId}/Protected");
 
-        $response = $this->dav('MOVE', '/TestProt_Move_Parent_{$this->runId}/Protected', [
-            'Destination' => $this->davBase . '/TestProt_Move_Parent_{$this->runId}/Protected_Moved',
+        $response = $this->dav('MOVE', "/TestProt_Move_Parent_{$this->runId}/Protected", [
+            'Destination' => $this->davBase . "/TestProt_Move_Parent_{$this->runId}/Protected_Moved",
         ]);
         // Cleanup: the destination may or may not have been created
-        $this->createdDavPaths[] = '/TestProt_Move_Parent_{$this->runId}/Protected_Moved';
+        $this->createdDavPaths[] = "/TestProt_Move_Parent_{$this->runId}/Protected_Moved";
 
         $this->assertSame(403, $response['http_code'],
             'MOVE of protected folder must return 403');
-        $this->assertFolderExists('/TestProt_Move_Parent_{$this->runId}/Protected',
+        $this->assertFolderExists("/TestProt_Move_Parent_{$this->runId}/Protected",
             'Protected folder must remain at original location');
     }
 
     public function testMoveProtectedFolderIntoNormalFolderIsBlocked(): void {
-        $this->createFolder('/TestProt_MoveIntoNormal_Protected_{$this->runId}');
-        $this->createFolder('/TestProt_MoveIntoNormal_Target_{$this->runId}');
-        $this->protectPath('/files/TestProt_MoveIntoNormal_Protected_{$this->runId}');
+        $this->createFolder("/TestProt_MoveIntoNormal_Protected_{$this->runId}");
+        $this->createFolder("/TestProt_MoveIntoNormal_Target_{$this->runId}");
+        $this->protectPath("/files/TestProt_MoveIntoNormal_Protected_{$this->runId}");
 
-        $response = $this->dav('MOVE', '/TestProt_MoveIntoNormal_Protected_{$this->runId}', [
-            'Destination' => $this->davBase . '/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}',
+        $response = $this->dav('MOVE', "/TestProt_MoveIntoNormal_Protected_{$this->runId}", [
+            'Destination' => $this->davBase . "/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}",
         ]);
-        $this->createdDavPaths[] = '/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}';
+        $this->createdDavPaths[] = "/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}";
 
         $this->assertSame(403, $response['http_code'],
             'Dragging a protected folder into a normal folder must return 403');
-        $this->assertFolderExists('/TestProt_MoveIntoNormal_Protected_{$this->runId}',
+        $this->assertFolderExists("/TestProt_MoveIntoNormal_Protected_{$this->runId}",
             'Protected folder must remain at original location');
-        $this->assertFolderNotExists('/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}',
+        $this->assertFolderNotExists("/TestProt_MoveIntoNormal_Target_{$this->runId}/TestProt_MoveIntoNormal_Protected_{$this->runId}",
             'Protected folder must not appear inside the target folder');
     }
 
     public function testMoveNestedProtectedFolderIntoNormalFolderIsBlocked(): void {
         // Protected folder is NOT at root: /Parent/Sub/Protected
-        $this->createFolder('/TestProt_NestedParent_{$this->runId}');
-        $this->createFolder('/TestProt_NestedParent_{$this->runId}/Sub');
-        $this->createFolder('/TestProt_NestedParent_{$this->runId}/Sub/Protected');
-        $this->createFolder('/TestProt_NestedTarget_{$this->runId}');
-        $this->protectPath('/files/TestProt_NestedParent_{$this->runId}/Sub/Protected');
+        $this->createFolder("/TestProt_NestedParent_{$this->runId}");
+        $this->createFolder("/TestProt_NestedParent_{$this->runId}/Sub");
+        $this->createFolder("/TestProt_NestedParent_{$this->runId}/Sub/Protected");
+        $this->createFolder("/TestProt_NestedTarget_{$this->runId}");
+        $this->protectPath("/files/TestProt_NestedParent_{$this->runId}/Sub/Protected");
 
-        $response = $this->dav('MOVE', '/TestProt_NestedParent_{$this->runId}/Sub/Protected', [
-            'Destination' => $this->davBase . '/TestProt_NestedTarget_{$this->runId}/Protected',
+        $response = $this->dav('MOVE', "/TestProt_NestedParent_{$this->runId}/Sub/Protected", [
+            'Destination' => $this->davBase . "/TestProt_NestedTarget_{$this->runId}/Protected",
         ]);
-        $this->createdDavPaths[] = '/TestProt_NestedTarget_{$this->runId}/Protected';
+        $this->createdDavPaths[] = "/TestProt_NestedTarget_{$this->runId}/Protected";
 
         $this->assertSame(403, $response['http_code'],
             'MOVE of nested protected folder into normal folder must return 403');
-        $this->assertFolderExists('/TestProt_NestedParent_{$this->runId}/Sub/Protected',
+        $this->assertFolderExists("/TestProt_NestedParent_{$this->runId}/Sub/Protected",
             'Protected folder must remain at original nested location');
-        $this->assertFolderNotExists('/TestProt_NestedTarget_{$this->runId}/Protected',
+        $this->assertFolderNotExists("/TestProt_NestedTarget_{$this->runId}/Protected",
             'No copy must be created at destination');
     }
 
@@ -199,14 +199,14 @@ class WebDAVProtectionTest extends TestCase {
         // Important: the file must be created BEFORE the folder is protected, because
         // protecting a folder marks it as non-creatable (getPermissions returns READ|SHARE
         // for the folder node itself, blocking new-file creation via the parent permission check).
-        $this->createFolder('/TestProt_MoveInside_{$this->runId}');
-        $this->createFile('/TestProt_MoveInside_{$this->runId}/original.txt', 'content');
-        $this->protectPath('/files/TestProt_MoveInside_{$this->runId}');
+        $this->createFolder("/TestProt_MoveInside_{$this->runId}");
+        $this->createFile("/TestProt_MoveInside_{$this->runId}/original.txt", 'content');
+        $this->protectPath("/files/TestProt_MoveInside_{$this->runId}");
 
-        $response = $this->dav('MOVE', '/TestProt_MoveInside_{$this->runId}/original.txt', [
-            'Destination' => $this->davBase . '/TestProt_MoveInside_{$this->runId}/renamed.txt',
+        $response = $this->dav('MOVE', "/TestProt_MoveInside_{$this->runId}/original.txt", [
+            'Destination' => $this->davBase . "/TestProt_MoveInside_{$this->runId}/renamed.txt",
         ]);
-        $this->createdDavPaths[] = '/TestProt_MoveInside_{$this->runId}/renamed.txt';
+        $this->createdDavPaths[] = "/TestProt_MoveInside_{$this->runId}/renamed.txt";
 
         $this->assertContains($response['http_code'], [201, 204],
             'MOVE within protected folder scope must be allowed');
@@ -254,16 +254,16 @@ class WebDAVProtectionTest extends TestCase {
     // -------------------------------------------------------------------------
 
     public function testCopyProtectedFolderIsBlocked(): void {
-        $this->setupProtectedFolder('/TestProt_Copy_{$this->runId}');
+        $this->setupProtectedFolder("/TestProt_Copy_{$this->runId}");
 
-        $response = $this->dav('COPY', '/TestProt_Copy_{$this->runId}', [
-            'Destination' => $this->davBase . '/TestProt_Copy_{$this->runId}_Dest',
+        $response = $this->dav('COPY', "/TestProt_Copy_{$this->runId}", [
+            'Destination' => $this->davBase . "/TestProt_Copy_{$this->runId}_Dest",
         ]);
-        $this->createdDavPaths[] = '/TestProt_Copy_{$this->runId}_Dest';
+        $this->createdDavPaths[] = "/TestProt_Copy_{$this->runId}_Dest";
 
         $this->assertSame(423, $response['http_code'],
             'COPY of protected folder must return 423 Locked');
-        $this->assertFolderNotExists('/TestProt_Copy_{$this->runId}_Dest',
+        $this->assertFolderNotExists("/TestProt_Copy_{$this->runId}_Dest",
             'Copy destination must not be created');
     }
 
@@ -280,17 +280,17 @@ class WebDAVProtectionTest extends TestCase {
      * every unrelated user who wants a folder with the same name.
      */
     public function testMKCOLWithSameBasenameAsProtectedFolderIsAllowed(): void {
-        $this->createFolder('/TestProt_BasenameParent_{$this->runId}');
-        $this->createFolder('/TestProt_BasenameParent_{$this->runId}/UniqueFolder99_{$this->runId}');
-        $this->protectPath('/files/TestProt_BasenameParent_{$this->runId}/UniqueFolder99_{$this->runId}');
+        $this->createFolder("/TestProt_BasenameParent_{$this->runId}");
+        $this->createFolder("/TestProt_BasenameParent_{$this->runId}/UniqueFolder99_{$this->runId}");
+        $this->protectPath("/files/TestProt_BasenameParent_{$this->runId}/UniqueFolder99_{$this->runId}");
 
         // Same basename, different location — unrelated to the protected path
-        $response = $this->dav('MKCOL', '/UniqueFolder99_{$this->runId}');
-        $this->createdDavPaths[] = '/UniqueFolder99_{$this->runId}';
+        $response = $this->dav('MKCOL', "/UniqueFolder99_{$this->runId}");
+        $this->createdDavPaths[] = "/UniqueFolder99_{$this->runId}";
 
         $this->assertContains($response['http_code'], [201, 405],
             'MKCOL reusing a protected folder name elsewhere must be allowed');
-        $this->assertFolderExists('/UniqueFolder99_{$this->runId}',
+        $this->assertFolderExists("/UniqueFolder99_{$this->runId}",
             'Folder reusing the name must actually be created');
     }
 
@@ -298,10 +298,10 @@ class WebDAVProtectionTest extends TestCase {
      * Creating a subfolder INSIDE a protected folder must remain allowed.
      */
     public function testMKCOLInsideProtectedFolderIsAllowed(): void {
-        $this->setupProtectedFolder('/TestProt_InternalMKCOL_{$this->runId}');
+        $this->setupProtectedFolder("/TestProt_InternalMKCOL_{$this->runId}");
 
-        $response = $this->dav('MKCOL', '/TestProt_InternalMKCOL_{$this->runId}/SubFolder');
-        $this->createdDavPaths[] = '/TestProt_InternalMKCOL_{$this->runId}/SubFolder';
+        $response = $this->dav('MKCOL', "/TestProt_InternalMKCOL_{$this->runId}/SubFolder");
+        $this->createdDavPaths[] = "/TestProt_InternalMKCOL_{$this->runId}/SubFolder";
 
         $this->assertContains($response['http_code'], [201, 405],
             'MKCOL inside protected folder must be allowed (201) or already exists (405)');
@@ -323,27 +323,27 @@ class WebDAVProtectionTest extends TestCase {
      */
     public function testWindowsClientMoveSequenceNoOrphanedFolder(): void {
         // Setup: create /Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId} and protect it
-        $this->createFolder('/Tests_Win_{$this->runId}');
-        $this->createFolder('/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}');
-        $this->protectPath('/files/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}');
+        $this->createFolder("/Tests_Win_{$this->runId}");
+        $this->createFolder("/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}");
+        $this->protectPath("/files/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}");
 
         // Step 1 (Windows client): MKCOL destination at root — allowed
-        $mkcolResponse = $this->dav('MKCOL', '/ProtectedFolder_{$this->runId}');
-        $this->createdDavPaths[] = '/ProtectedFolder_{$this->runId}';
+        $mkcolResponse = $this->dav('MKCOL', "/ProtectedFolder_{$this->runId}");
+        $this->createdDavPaths[] = "/ProtectedFolder_{$this->runId}";
 
         $this->assertContains($mkcolResponse['http_code'], [201, 405],
             'Step 1 — MKCOL at the destination is allowed');
 
         // Step 2 (Windows client): MOVE — must be BLOCKED
-        $moveResponse = $this->dav('MOVE', '/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}', [
-            'Destination' => $this->davBase . '/ProtectedFolder_{$this->runId}',
+        $moveResponse = $this->dav('MOVE', "/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}", [
+            'Destination' => $this->davBase . "/ProtectedFolder_{$this->runId}",
         ]);
 
         $this->assertSame(403, $moveResponse['http_code'],
             'Step 2 — Windows MOVE must be blocked');
-        $this->assertFolderExists('/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}',
+        $this->assertFolderExists("/Tests_Win_{$this->runId}/ProtectedFolder_{$this->runId}",
             'Step 2 — Original folder must still exist at source');
-        $this->assertFolderNotExists('/ProtectedFolder_{$this->runId}',
+        $this->assertFolderNotExists("/ProtectedFolder_{$this->runId}",
             'Step 2 — Empty stepping-stone must be cleaned up at destination');
     }
 
@@ -352,40 +352,40 @@ class WebDAVProtectionTest extends TestCase {
     // -------------------------------------------------------------------------
 
     public function testUnprotectedFolderCanBeMoved(): void {
-        $this->createFolder('/TestFree_Move_Src_{$this->runId}');
+        $this->createFolder("/TestFree_Move_Src_{$this->runId}");
 
-        $response = $this->dav('MOVE', '/TestFree_Move_Src_{$this->runId}', [
-            'Destination' => $this->davBase . '/TestFree_Move_Dst_{$this->runId}',
+        $response = $this->dav('MOVE', "/TestFree_Move_Src_{$this->runId}", [
+            'Destination' => $this->davBase . "/TestFree_Move_Dst_{$this->runId}",
         ]);
-        $this->createdDavPaths[] = '/TestFree_Move_Dst_{$this->runId}';
+        $this->createdDavPaths[] = "/TestFree_Move_Dst_{$this->runId}";
 
         $this->assertContains($response['http_code'], [201, 204],
             'MOVE of unprotected folder must succeed');
     }
 
     public function testUnprotectedFolderCanBeCopied(): void {
-        $this->createFolder('/TestFree_Copy_Src_{$this->runId}');
+        $this->createFolder("/TestFree_Copy_Src_{$this->runId}");
 
-        $response = $this->dav('COPY', '/TestFree_Copy_Src_{$this->runId}', [
-            'Destination' => $this->davBase . '/TestFree_Copy_Dst_{$this->runId}',
+        $response = $this->dav('COPY', "/TestFree_Copy_Src_{$this->runId}", [
+            'Destination' => $this->davBase . "/TestFree_Copy_Dst_{$this->runId}",
         ]);
-        $this->createdDavPaths[] = '/TestFree_Copy_Dst_{$this->runId}';
+        $this->createdDavPaths[] = "/TestFree_Copy_Dst_{$this->runId}";
 
         $this->assertContains($response['http_code'], [201, 204],
             'COPY of unprotected folder must succeed');
     }
 
     public function testUnprotectedFolderCanBeDeleted(): void {
-        $this->createFolder('/TestFree_Delete_{$this->runId}');
+        $this->createFolder("/TestFree_Delete_{$this->runId}");
 
-        $response = $this->dav('DELETE', '/TestFree_Delete_{$this->runId}');
+        $response = $this->dav('DELETE', "/TestFree_Delete_{$this->runId}");
 
         $this->assertContains($response['http_code'], [204, 404],
             'DELETE of unprotected folder must succeed');
         // Remove from cleanup list since it was already deleted
         $this->createdDavPaths = array_filter(
             $this->createdDavPaths,
-            fn($p) => $p !== '/TestFree_Delete_{$this->runId}'
+            fn($p) => $p !== "/TestFree_Delete_{$this->runId}"
         );
     }
 
