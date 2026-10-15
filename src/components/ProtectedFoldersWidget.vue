@@ -16,7 +16,7 @@
 				</div>
 				<div class="folder-protection-widget__details">
 					<span class="folder-protection-widget__name" :title="folder.path">
-						{{ folder.path.replace(/^\/files\//, '') }}
+						{{ displayPath(folder) }}
 					</span>
 					<span class="folder-protection-widget__meta">
 						<span class="folder-protection-widget__size">{{ formatSize(folder.size) }}</span>
@@ -89,6 +89,15 @@ export default {
 			} finally {
 				this.loading = false
 			}
+		},
+
+		// A Team folder is stored as /__groupfolders/{id}[/sub]; show its mount
+		// point name instead, which the API already resolves into display_name.
+		displayPath(folder) {
+			if (folder.is_group_folder && folder.display_name && folder.display_name !== folder.path) {
+				return folder.display_name + folder.path.replace(/^\/__groupfolders\/\d+/, '')
+			}
+			return folder.path.replace(/^\/files\//, '')
 		},
 
 		formatSize(bytes) {
