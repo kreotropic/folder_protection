@@ -9,6 +9,15 @@
 - README: the translations list now includes German, Spanish and French, and a stale
   note claiming `js/folder-protection-ui.js` is not built by webpack was removed.
 
+### Fixed
+- **No lock icon in the Files grid view, and "Move or copy" offered for protected
+  folders there.** The Files app renders no inline file actions in grid view, so the
+  lock badge introduced in 2.5.0 (drawn through `renderInline()`) only appeared in the
+  list view. The context-menu hiding keys off that badge, so in grid view "Move or copy"
+  was offered again for protected folders (the server still refused it). Grid cards now
+  get the lock overlaid on the folder icon, and the menu is cleaned up as in the list
+  view.
+
 ## [2.5.1] - 2026-10-15
 
 ### Changed
