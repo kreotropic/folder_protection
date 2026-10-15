@@ -88,6 +88,9 @@ The app interface is available in:
 
 - **English** (default)
 - **Portuguese (Portugal)** / Português (Portugal)
+- **German** / Deutsch
+- **Spanish** / Español
+- **French** / Français
 
 Contributions for additional languages are welcome — add a `l10n/<locale>.json` and the corresponding `l10n/<locale>.js` file.
 
@@ -142,8 +145,6 @@ npm install
 npm run build      # production build
 npm run dev        # watch mode
 ```
-
-> Note: `js/folder-protection-ui.js` is shipped as-is (not produced by webpack) — edit it directly.
 
 ## Contributing
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **Fuller App Store description.** The store page only showed the one-line
+  `<description>` from `info.xml` (the store never reads the README). It now describes
+  what protection does, how to manage it and the supported languages, in Markdown.
+- README: the translations list now includes German, Spanish and French, and a stale
+  note claiming `js/folder-protection-ui.js` is not built by webpack was removed.
+
 ## [2.5.1] - 2026-10-15
 
 ### Changed

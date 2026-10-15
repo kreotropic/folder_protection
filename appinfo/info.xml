@@ -12,7 +12,28 @@
     <id>folder_protection</id>
     <name>Folder Protection</name>
     <summary>Protect folders from being moved, copied, or deleted</summary>
-    <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
+    <description><![CDATA[Stop the folders that matter from being moved, copied or deleted by accident.
+
+Moving or deleting a folder with hundreds of gigabytes can keep a Nextcloud server busy for hours, and one wrong drag in the desktop client is enough to start it. Folder Protection lets administrators mark the folders that must stay where they are.
+
+## What protection does
+
+- **A protected folder can't be deleted, moved or copied**, whether from the web interface, the desktop and mobile clients or plain WebDAV. Its parent folders can't be deleted either, since that would take it along.
+- **Work inside it carries on as usual.** Users can still create folders, add and edit files, and rename things inside a protected folder.
+- **The desktop client plays along.** Protected folders are reported without the delete permission, so the client never tries to delete them, and a blocked move shows up as a clear error in its sync activity.
+- **Users can see it.** Protected folders get a lock icon in the Files list, the actions that would fail are hidden, and a blocked attempt sends the user a notification explaining why.
+
+## Managing protections
+
+- **Admin page** (Administration settings → Folder Protection) with a folder tree picker: protect several folders at once and record why each one is protected.
+- **Team folders**: protect any Team folder (Group Folders app) from the admin page, without being a member of it.
+- **External storage**: folders on SMB, S3, WebDAV or local mounts are supported.
+- **Dashboard widget** listing every protected folder with its size and reason.
+- **occ commands** to protect, unprotect, list and check folders from scripts.
+
+Protection is checked at two layers (WebDAV and storage). A distributed cache (Redis or Memcached) is recommended: without it, protections added with occ can take up to five minutes to apply.
+
+Available in English, Portuguese, German, Spanish and French.]]></description>
     <version>2.5.1</version>
     <licence>agpl</licence>
     <author mail="rsfneg@gmail.com">Ricardo Ferreira</author>
