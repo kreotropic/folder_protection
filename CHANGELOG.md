@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.5.2] - 2026-10-15
 
 ### Changed
 - **Fuller App Store description.** The store page only showed the one-line
