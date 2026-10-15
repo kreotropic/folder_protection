@@ -152,15 +152,15 @@ See [Development](#development) above for how to run the tests.
 
 ## Screenshots
 
-![Admin Interface](screenshots/Admin_Interface.png)
+![Admin Interface](screenshots/Admin_Interface-2.5.1.png)
 
-![Add Protection Dialog](screenshots/Add_Protection_Interface.png)
+![Add Protection Dialog](screenshots/Add_Protection_Interface-2.5.1.png)
 
-![Folder Tree Picker](screenshots/Folder_Picker.png)
+![Folder Tree Picker](screenshots/Folder_Picker-2.5.1.png)
 
-![Single Protected Folder](screenshots/Protected_Folder.png)
+![Single Protected Folder](screenshots/Protected_Folder-2.5.1.png)
 
-![Dashboard Widget](screenshots/Widget.png)
+![Dashboard Widget](screenshots/Widget-2.5.1.png)
 
 *The snapshots above demonstrate the admin panel listing, the "add protection" form with the tree-based folder picker, an individual protected path, and the dashboard widget. These images are picked up by the App Store crawler to showcase the app.*
 

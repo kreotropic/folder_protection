@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.5.1] - 2026-10-15
+
+### Changed
+- **The App Store now shows the current screenshots.** The store serves screenshots
+  through an image proxy that keeps the first copy of each URL forever, so the
+  screenshots retaken for 2.5.0 (and an earlier refresh in 2.2.1) never replaced the
+  originals there: they had been updated under the same file names. Screenshot files
+  now carry the version they were taken for (`Widget-2.5.1.png`), so every retake gets
+  a new URL. No change to the app itself.
+
 ## [2.5.0] - 2026-10-15
 
 ### Added

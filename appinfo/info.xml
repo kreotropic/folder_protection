@@ -13,7 +13,7 @@
     <name>Folder Protection</name>
     <summary>Protect folders from being moved, copied, or deleted</summary>
     <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
-    <version>2.5.0</version>
+    <version>2.5.1</version>
     <licence>agpl</licence>
     <author mail="rsfneg@gmail.com">Ricardo Ferreira</author>
     <namespace>FolderProtection</namespace>
@@ -28,11 +28,18 @@
     <bugs>https://github.com/kreotropic/folder_protection/issues</bugs>
     <repository>https://github.com/kreotropic/folder_protection</repository>
 
-    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Admin_Interface.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Add_Protection_Interface.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Folder_Picker.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Protected_Folder.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Widget.png</screenshot>
+    <!--
+        Cada screenshot leva no nome a versão para que foi tirada. A App Store serve-as
+        por um proxy (usercontent.apps.nextcloud.com) que guarda para sempre a primeira
+        cópia de cada URL: substituir um ficheiro mantendo o nome nunca chega à loja.
+        Ao refazer uma screenshot, dar-lhe o nome da nova versão e fazer push para main
+        antes de submeter a release.
+    -->
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Admin_Interface-2.5.1.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Add_Protection_Interface-2.5.1.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Folder_Picker-2.5.1.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Protected_Folder-2.5.1.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/kreotropic/folder_protection/main/screenshots/Widget-2.5.1.png</screenshot>
 
     <dependencies>
         <php min-version="8.3"/>
