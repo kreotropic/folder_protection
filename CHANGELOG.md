@@ -1,16 +1,43 @@
 # Changelog
 
-## [Unreleased]
+## [2.5.0] - 2026-10-15
+
+### Added
+- **Nextcloud 35 support.** Declared compatibility widens from Nextcloud 33–34 to 33–35
+  (`info.xml` now reads `min-version="33" max-version="35"`). Nothing in the app used
+  an API removed in 35. Checked against a disposable instance of each version, each
+  with the `groupfolders` release built for it: the unit suite (25 tests) and the
+  integration suite (15 tests) pass, and in a real browser the lock badge, the hidden
+  row and selection-bar actions, the admin page and the dashboard widget work on 33,
+  34 and 35. Every instance ran PHP 8.3 or newer, so the PHP requirement stays at 8.3.
+  Contributed by Maxime Guerin (Netsyst) in #19.
+- **German, Spanish and French translations** (79 strings each). Previously only
+  English and Portuguese existed.
+
+### Fixed
+- **The dashboard widget could stay on its loading spinner forever.** The dashboard
+  mounts registered widgets in one pass, right after its first API call returns, and
+  on Nextcloud 35 never mounts a widget that registers after that. The widget waited
+  for `OCA.Dashboard` by polling every 300 ms, which on a responsive server lost that
+  race nearly every time (0 of 15 page loads on a local 35 instance). It now registers
+  the moment `OCA.Dashboard` is assigned (15 of 15), with a short poll kept as a fallback.
+- **The dashboard widget showed Team folders by their internal path**
+  (`/__groupfolders/3`) instead of their name. It now shows the Team folder's name, as
+  the admin page already did.
 
 ### Changed
-- **Declared compatibility widened from Nextcloud 33–34 to 33–35** (`info.xml` now
-  reads `min-version="33" max-version="35"`). Checked against a disposable instance of
-  each version, each with the `groupfolders` release built for it: the unit suite
-  (25 tests) and the integration suite (15 tests) pass, and in a real browser the lock
-  badge, the hidden row and selection-bar actions, the admin page and the dashboard
-  widget work on 33, 34 and 35. Every instance ran PHP 8.3 or newer, so the PHP
-  requirement stays at 8.3.
-- The README still said "Nextcloud 28–33, PHP 8.1 or later" — out of date since 2.4.0
+- **The lock badge in the Files list no longer appears late.** It used to be added by
+  a `MutationObserver` after a separate REST request, so it showed up a beat after the
+  row (and after the favorite star). It is now rendered through `@nextcloud/files`'
+  public `registerDavProperty()` / `registerFileAction()` API, the same one core uses
+  for the favorite star, from the `nc:is-protected` property already present in the
+  listing's own PROPFIND. Hiding "Move or copy" and "Delete" in the row menu and the
+  selection bar now keys off the rendered badge.
+- The admin settings page showed the badge as a 🔒 emoji; it now uses the same SVG
+  icon as the Files list.
+- `occ folder-protection:clear-notifications` declares `configure(): void` like the
+  other commands, so it keeps working if Symfony Console ever types that method.
+- The README still said "Nextcloud 28–33, PHP 8.1 or later", out of date since 2.4.0
   narrowed `info.xml`. It now matches `info.xml`.
 
 ## [2.4.1] - 2026-09-11

@@ -34,6 +34,7 @@ cert/
 
 # Packaged release tarballs
 build/artifacts/
+/releases/
 DEV_CHANGELOG.md
 manual_curl_test.sh
 test_etag.sh
